@@ -315,6 +315,7 @@ CREATE TABLE change_detections (
    - Actualizar `<html lang="XX">` al idioma destino.
    - Traducir `<title>`, `<meta name="description">`, `<meta property="og:title">`, `<meta property="og:description">`, `<meta property="og:site_name">` y `<meta name="twitter:title">`, `<meta name="twitter:description">`.
    - Inyectar etiquetas `<link rel="alternate" hreflang="...">` en el `<head>` para todos los idiomas disponibles (incluyendo el original), usando las URLs de `targetUrls` del config:
+
      ```html
      <link rel="alternate" hreflang="en" href="https://ejemplo.com/about" />
      <link rel="alternate" hreflang="es" href="https://es.ejemplo.com/about" />
