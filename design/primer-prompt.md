@@ -134,6 +134,10 @@ CREATE TABLE change_detections (
   "name": "Mi Proyecto",
   "slug": "mi-proyecto",
   "url": "https://ejemplo.com",
+  "targetUrls": {
+    "es": "https://es.ejemplo.com",
+    "fr": "https://fr.ejemplo.com"
+  },
   "siteType": "nextjs",
   "crawl": {
     "delayMs": 1500,
@@ -297,7 +301,7 @@ staticl10n
 │
 ├── Gestionar proyectos
 │   ├── Listar proyectos
-│   ├── Crear nuevo proyecto  →  solicita nombre, URL, tipo de sitio, paths
+│   ├── Crear nuevo proyecto  →  solicita nombre, URL origen, URLs destino, tipo de sitio, paths
 │   ├── Editar proyecto       →  abre config.json en el editor del sistema ($EDITOR)
 │   └── Eliminar proyecto
 │
