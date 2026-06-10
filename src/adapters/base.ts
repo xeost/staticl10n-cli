@@ -24,8 +24,11 @@ export interface SiteAdapter {
   /** Returns additional asset URLs that this framework requires (e.g. fonts). */
   getAdditionalAssets(html: string, pageUrl: string): string[];
 
-  /** Rewrites asset paths in the HTML to local relative paths using the provided map. */
-  rewriteAssetPaths(html: string, assetMap: Map<string, string>): string;
+  /**
+   * Rewrites asset paths in the HTML to local relative paths using the provided map.
+   * pageUrl is the original URL of the page (used to resolve relative/root-relative hrefs).
+   */
+  rewriteAssetPaths(html: string, assetMap: Map<string, string>, pageUrl: string): string;
 
   /**
    * Returns true if this site type requires the runtime translation patch (translations.js).

@@ -18,6 +18,7 @@ import { stage1Menu } from './menus/stage1.js';
 import { stage2Menu } from './menus/stage2.js';
 import { stage3Menu } from './menus/stage3.js';
 import { stage4Menu } from './menus/stage4.js';
+import { testMenu } from './menus/test.js';
 
 // ─── Non-Interactive CLI Commands (via commander) ─────────────────────────────
 
@@ -100,6 +101,8 @@ async function runInteractive(): Promise<void> {
           { name: 'Stage 2: Translation', value: 'stage2' },
           { name: 'Stage 3: Post-Personalization', value: 'stage3' },
           { name: 'Stage 4: Monitoring', value: 'stage4' },
+          new inquirer.Separator(),
+          { name: chalk.yellow('⚡ Test: process single page'), value: 'test' },
         ]
       : [];
 
@@ -169,6 +172,13 @@ async function handleMainAction(action: string): Promise<void> {
       if (!session.activeProjectSlug) break;
       const config = getProjectConfig(session.activeProjectSlug);
       await stage4Menu(session.activeProjectSlug, config);
+      break;
+    }
+
+    case 'test': {
+      if (!session.activeProjectSlug) break;
+      const config = getProjectConfig(session.activeProjectSlug);
+      await testMenu(session.activeProjectSlug, config);
       break;
     }
   }

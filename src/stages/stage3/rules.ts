@@ -22,6 +22,7 @@ export async function applyPostPersonalization(
   projectSlug: string,
   config: ProjectConfig,
   dryRun = false,
+  targetUrl?: string,
 ): Promise<PostPersonalizationResult> {
   const project = dbGetProjectBySlug(projectSlug);
   if (!project) throw new Error(`Project "${projectSlug}" not found`);
@@ -46,7 +47,8 @@ export async function applyPostPersonalization(
   const processedDirs: string[] = [];
   let pagesProcessed = 0;
 
-  const pages = dbGetPagesByProject(project.id);
+  let pages = dbGetPagesByProject(project.id);
+  if (targetUrl) pages = pages.filter((p) => p.url === targetUrl);
 
   for (const { label, dir } of directories) {
     if (!fs.existsSync(dir)) {

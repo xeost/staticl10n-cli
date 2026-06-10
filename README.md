@@ -149,6 +149,91 @@ Stage 4: Monitoring  (ongoing)
 
 ---
 
+## Single-Page Test Mode
+
+Before processing an entire site, use the **⚡ Test: process single page** option to verify that the full pipeline works correctly on a single URL. This is especially useful for large sites where a full crawl could take a very long time.
+
+### How to access it
+
+From the main interactive menu, with a project already selected:
+
+```
+? Main Menu
+  ...
+  ─────── Active project ───────
+  View project status
+  Stage 1: Capture
+  Stage 2: Translation
+  Stage 3: Post-Personalization
+  Stage 4: Monitoring
+  ───────────────────────────────
+❯ ⚡ Test: process single page
+```
+
+### What it does
+
+The test wizard asks three questions and then runs:
+
+1. **URL to test** — any page from the site (defaults to the project's base URL). The URL does not need to have been crawled first; it is inserted into the database automatically.
+2. **Target languages** — which of the configured languages to translate into (all pre-selected).
+3. **Stages to run** — individual stages can be toggled on/off:
+
+| Stage | What runs |
+|---|---|
+| **Stage 1: Capture** | Opens the page with Playwright, applies the site adapter, downloads assets, saves to `original/` |
+| **Stage 1b: Pre-personalization** | Applies `preTranslation` rules to the captured HTML (remove trackers, cookie banners, etc.) |
+| **Stage 2: Translation** | Extracts translatable fragments, queries Ollama, injects translations into each language directory |
+| **Stage 3: Post-personalization** | Applies `postTranslation` rules to the translated output (inject banners, replace text, etc.) |
+
+### Example output
+
+```
+  ⚡ Single-Page Test Mode
+  Runs the full pipeline on a single URL so you can verify the output
+  without processing the whole site.
+
+? URL to test: https://example.com/about
+? Languages to translate into: es, fr
+? Which stages to run: Stage 1, Stage 1b, Stage 2, Stage 3
+
+  ✔ [1/4] Captured → /data/my-project/original/about/index.html
+  ✔ [1b]  Pre-personalization done — 1 page, rules: Remove Analytics:3
+  ✔ [2/4] Translation done — cache hits: 0, misses: 42
+         [es] → /data/my-project/es/about/index.html
+         [fr] → /data/my-project/fr/about/index.html
+  ✔ [3/4] Post-personalization done — 3 file(s) in: original, es, fr
+
+  Test Summary
+  ─────────────────────────────────────────
+  Stage 1 : Capture                  ✓ ok
+  Stage 1b: Pre-personalization      ✓ ok
+  Stage 2 : Translation              ✓ ok
+  Stage 3 : Post-personalization     ✓ ok
+
+  Output location:
+    original/  : /data/my-project/original/about/index.html
+    [es    ]:    /data/my-project/es/about/index.html
+    [fr    ]:    /data/my-project/fr/about/index.html
+
+  Tip: open the translated HTML file in a browser to verify the output.
+```
+
+### Recommended test workflow
+
+1. Create the project and set a short `delayMs` (e.g. `500`) in the config for testing.
+2. Run **⚡ Test** on the home page (`/`) first — this is usually the most complex page.
+3. Check the output HTML in a browser and verify:
+   - Text is translated correctly.
+   - Images and links still work (relative paths resolved).
+   - Personalization rules applied as expected.
+   - For Next.js sites: the `translations.js` patch is present and the page does not flicker.
+4. Adjust `config.json` rules or translation settings as needed.
+5. Once satisfied, run the full workflow from Stage 1.
+
+> **Note:** Pages captured in test mode count towards the project's page database just like a normal crawl. You can inspect them from **Stage 1 → View captured pages** at any time.
+
+---
+
 ## Project Configuration
 
 Each project has a `config.json` with the following structure:

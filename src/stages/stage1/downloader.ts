@@ -129,6 +129,14 @@ function collectAssetUrls(html: string, pageUrl: string): string[] {
     const srcset = $(el).attr('srcset') ?? '';
     srcset.split(',').forEach((entry) => resolve(entry.trim().split(/\s+/)[0]));
   });
+  // Preloaded fonts, styles, and images (e.g. next/font CSS, hero images)
+  $('link[rel="preload"]').each((_i, el) => {
+    const as = $(el).attr('as');
+    if (as === 'font' || as === 'style' || as === 'image') {
+      resolve($(el).attr('href'));
+    }
+  });
+
   // Favicons and other link tags
   $('link[href]:not([rel="stylesheet"]):not([rel="canonical"]):not([rel="alternate"])').each(
     (_i, el) => {
@@ -140,6 +148,45 @@ function collectAssetUrls(html: string, pageUrl: string): string[] {
   );
 
   return Array.from(urls);
+}
+
+/**
+ * After all assets are downloaded, rewrites absolute url() references inside
+ * downloaded CSS files so that fonts and images resolve correctly when served
+ * from the local _assets/ directory.
+ */
+export function rewriteDownloadedCssUrls(
+  outputDir: string,
+  assetMap: Map<string, string>,
+): void {
+  for (const [assetUrl, localRelPath] of assetMap) {
+    if (!assetUrl.toLowerCase().endsWith('.css')) continue;
+    const localAbsPath = path.join(outputDir, localRelPath);
+    if (!fs.existsSync(localAbsPath)) continue;
+
+    let css = fs.readFileSync(localAbsPath, 'utf-8');
+    let modified = false;
+
+    css = css.replace(/url\(["']?([^"')]+)["']?\)/g, (_match: string, raw: string) => {
+      if (raw.startsWith('data:')) return _match;
+      // Resolve the raw url() value against the CSS file's own original URL
+      let fullUrl: string;
+      try {
+        fullUrl = new URL(raw, assetUrl).href;
+      } catch {
+        return _match;
+      }
+      const targetRelPath = assetMap.get(fullUrl);
+      if (!targetRelPath) return _match;
+      // Compute the relative path from the CSS file's directory to the target asset
+      const cssDir = path.dirname(localRelPath);
+      const relPath = path.relative(cssDir, targetRelPath).split(path.sep).join('/');
+      modified = true;
+      return `url('${relPath}')`;
+    });
+
+    if (modified) fs.writeFileSync(localAbsPath, css, 'utf-8');
+  }
 }
 
 /** Extracts url() references from a CSS string (e.g. for fonts and background images). */

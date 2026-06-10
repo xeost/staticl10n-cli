@@ -29,16 +29,29 @@ export function urlToFilePath(pageUrl: string): string {
 }
 
 /**
- * Converts an asset URL to a relative local path under _assets/.
- * e.g. https://example.com/_next/static/css/main.css → _assets/_next/static/css/main.css
+ * Converts an asset URL to a relative local path.
+ *
+ * Same-origin assets preserve their natural path structure:
+ *   https://example.com/_next/static/css/main.css → _next/static/css/main.css
+ *
+ * This ensures JS runtimes that hardcode /_next/ (Next.js, Nuxt, etc.) still
+ * work when the output directory is served with a static HTTP server.
+ *
+ * External / CDN assets are namespaced under _assets/<hostname>/:
+ *   https://cdn.example.com/lib.js → _assets/cdn.example.com/lib.js
  */
 export function assetUrlToLocalPath(assetUrl: string, baseUrl: string): string {
   const parsed = new URL(assetUrl, baseUrl);
+  const base = new URL(baseUrl);
+
   let assetPath = parsed.pathname;
-  if (assetPath.startsWith('/')) {
-    assetPath = assetPath.slice(1);
+  if (assetPath.startsWith('/')) assetPath = assetPath.slice(1);
+
+  if (parsed.origin === base.origin) {
+    return assetPath || 'index.html';
+  } else {
+    return path.join('_assets', parsed.hostname, assetPath);
   }
-  return path.join('_assets', assetPath);
 }
 
 /**
@@ -61,6 +74,10 @@ export function normalizeUrl(
   opts: { normalizeTrailingSlash: boolean; stripQueryParams: boolean },
 ): string {
   const parsed = new URL(rawUrl);
+
+  // Hash fragments are client-side only — the server returns identical HTML
+  // for /page#section-a and /page#section-b, so always strip them.
+  parsed.hash = '';
 
   if (opts.stripQueryParams) {
     parsed.search = '';

@@ -14,7 +14,7 @@ import {
 import { delayWithJitter } from '../../utils/delay.js';
 import { logger } from '../../utils/logger.js';
 import { urlToFilePath } from '../../utils/paths.js';
-import { downloadAssets } from './downloader.js';
+import { downloadAssets, rewriteDownloadedCssUrls } from './downloader.js';
 
 // ─── Exporter ─────────────────────────────────────────────────────────────────
 
@@ -108,8 +108,22 @@ export async function capturePages(
           }
         }
 
-        // Rewrite asset paths to relative local paths
-        processedHtml = adapter.rewriteAssetPaths(processedHtml, assetMap);
+        // Rewrite asset paths to relative local paths.
+        // assetMap values are root-relative (e.g. "_assets/foo.css"). We must
+        // convert them to paths relative to the page's own directory so that
+        // nested pages (e.g. about/index.html) resolve assets correctly when
+        // served by any static HTTP server.
+        const pageDir = path.dirname(pageRow.path); // "." for root, "about" for /about/
+        const pageRelativeAssetMap = new Map<string, string>();
+        for (const [origUrl, rootRelPath] of assetMap) {
+          const relPath = path.relative(pageDir, rootRelPath).split(path.sep).join('/');
+          pageRelativeAssetMap.set(origUrl, relPath);
+        }
+        processedHtml = adapter.rewriteAssetPaths(processedHtml, pageRelativeAssetMap, pageRow.url);
+
+        // Rewrite absolute url() references inside downloaded CSS files
+        // (e.g. @font-face src that still point to the original domain)
+        rewriteDownloadedCssUrls(config.paths.original, assetMap);
 
         // Save __NEXT_DATA__ JSON if present (useful for debugging)
         if (config.siteType === 'nextjs') {

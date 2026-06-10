@@ -25,6 +25,7 @@ export async function applyPrePersonalization(
   projectSlug: string,
   config: ProjectConfig,
   dryRun = false,
+  targetUrl?: string,
 ): Promise<PersonalizationResult> {
   const project = dbGetProjectBySlug(projectSlug);
   if (!project) throw new Error(`Project "${projectSlug}" not found`);
@@ -35,7 +36,8 @@ export async function applyPrePersonalization(
     return { pagesProcessed: 0, affectedByRule: {} };
   }
 
-  const pages = dbGetPagesByProject(project.id, 'captured');
+  let pages = dbGetPagesByProject(project.id, 'captured');
+  if (targetUrl) pages = pages.filter((p) => p.url === targetUrl);
   const affectedByRule: Record<string, number> = {};
 
   for (const rule of rules) {

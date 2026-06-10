@@ -4,6 +4,7 @@ import type { Page } from 'playwright';
 import type { ProjectConfig } from '../core/config.js';
 import { delay } from '../utils/delay.js';
 import type { SiteAdapter } from './base.js';
+import { lookupAsset, rewriteCssUrls } from './generic.js';
 
 // ─── Next.js Adapter ──────────────────────────────────────────────────────────
 // Handles the specifics of Next.js sites: hydration, image optimization,
@@ -82,18 +83,31 @@ export class NextjsAdapter implements SiteAdapter {
     // (This is handled by the exporter; we just note it here.)
 
     // ── 5. Inject script to prevent SPA navigation ────────────────────────────
-    // Next.js intercepts <a> clicks and performs client-side navigation.
-    // On a static server without the correct JSON chunks, this would fail.
-    // We force full-page reloads for all internal links.
+    // Next.js uses history.pushState / replaceState for client-side navigation.
+    // We intercept those calls and force a full-page reload when the pathname
+    // changes, while leaving same-page updates (hash, query, theme state) alone.
+    //
+    // Crucially, we do NOT touch click events — intercepting clicks with
+    // stopImmediatePropagation in capture phase would prevent React from
+    // receiving events, breaking dropdowns, theme switching, and all other
+    // interactive components.
     const preventSPAScript = `<script>
-  document.addEventListener('click', function(e) {
-    var link = e.target.closest('a');
-    if (link && link.href && link.origin === location.origin) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      window.location.href = link.href;
-    }
-  }, true);
+(function () {
+  function intercept(url) {
+    if (!url || typeof url !== 'string') return false;
+    try {
+      var u = new URL(url, location.href);
+      if (u.origin !== location.origin) return false;
+      if (u.pathname === location.pathname) return false;
+      window.location.href = u.href;
+      return true;
+    } catch (e) { return false; }
+  }
+  var _push = history.pushState.bind(history);
+  history.pushState = function (s, t, url) { if (!intercept(url)) _push(s, t, url); };
+  var _replace = history.replaceState.bind(history);
+  history.replaceState = function (s, t, url) { if (!intercept(url)) _replace(s, t, url); };
+})();
 </script>`;
     $('head').prepend(preventSPAScript);
 
@@ -121,17 +135,19 @@ export class NextjsAdapter implements SiteAdapter {
     return fontUrls;
   }
 
-  rewriteAssetPaths(html: string, assetMap: Map<string, string>): string {
+  rewriteAssetPaths(html: string, assetMap: Map<string, string>, pageUrl: string): string {
     const $ = cheerio.load(html);
 
     $('[src]').each((_, el) => {
       const src = $(el).attr('src');
-      if (src && assetMap.has(src)) $(el).attr('src', assetMap.get(src)!);
+      const local = src ? lookupAsset(src, pageUrl, assetMap) : undefined;
+      if (local) $(el).attr('src', local);
     });
 
     $('link[href]').each((_, el) => {
       const href = $(el).attr('href');
-      if (href && assetMap.has(href)) $(el).attr('href', assetMap.get(href)!);
+      const local = href ? lookupAsset(href, pageUrl, assetMap) : undefined;
+      if (local) $(el).attr('href', local);
     });
 
     $('[srcset]').each((_, el) => {
@@ -143,20 +159,17 @@ export class NextjsAdapter implements SiteAdapter {
           const parts = entry.trim().split(/\s+/);
           const url = parts[0];
           const descriptor = parts.slice(1).join(' ');
-          const mapped = assetMap.get(url) ?? url;
+          const mapped = lookupAsset(url, pageUrl, assetMap) ?? url;
           return descriptor ? `${mapped} ${descriptor}` : mapped;
         })
         .join(', ');
       $(el).attr('srcset', rewritten);
     });
 
-    // Also rewrite url() references inside <style> tags
+    // Rewrite url() references inside <style> tags (handles full URLs, root-relative, bare filenames)
     $('style').each((_, el) => {
-      let css = $(el).html() ?? '';
-      assetMap.forEach((localPath, originalUrl) => {
-        css = css.replaceAll(originalUrl, localPath);
-      });
-      $(el).html(css);
+      const rewritten = rewriteCssUrls($(el).html() ?? '', pageUrl, assetMap);
+      $(el).html(rewritten);
     });
 
     return $.html();

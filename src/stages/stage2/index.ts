@@ -173,25 +173,37 @@ export async function translateProject(
 // ─── Asset Sync ───────────────────────────────────────────────────────────────
 
 /**
- * Copies or symlinks the _assets directory from original/ to the language directory.
+ * Copies or symlinks all asset content from original/ to the language directory.
+ *
+ * Assets now live at their natural root-relative paths (_next/, favicons/, _assets/, etc.)
+ * rather than being nested under a single _assets/ prefix, so we sync the entire
+ * originalDir tree.  HTML files are excluded — the translation step writes those.
  */
 async function syncAssets(
   originalDir: string,
   targetDir: string,
   mode: 'copy' | 'symlink',
 ): Promise<void> {
-  const srcAssets = path.join(originalDir, '_assets');
-  const dstAssets = path.join(targetDir, '_assets');
-
-  if (!fs.existsSync(srcAssets)) return;
+  if (!fs.existsSync(originalDir)) return;
 
   if (mode === 'symlink') {
-    if (!fs.existsSync(dstAssets)) {
-      fs.ensureDirSync(path.dirname(dstAssets));
-      fs.symlinkSync(srcAssets, dstAssets);
+    // Create a symlink per top-level entry (skip HTML files)
+    const entries = fs.readdirSync(originalDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.html')) continue;
+      const src = path.join(originalDir, entry.name);
+      const dst = path.join(targetDir, entry.name);
+      if (!fs.existsSync(dst)) {
+        fs.ensureDirSync(path.dirname(dst));
+        fs.symlinkSync(src, dst);
+      }
     }
   } else {
-    fs.copySync(srcAssets, dstAssets, { overwrite: false });
+    // Copy everything; translated HTML will be written (and overwrite) separately
+    fs.copySync(originalDir, targetDir, {
+      overwrite: false,
+      filter: (src: string) => !src.endsWith('.html'),
+    });
   }
 }
 
