@@ -94,7 +94,8 @@ CREATE TABLE pages (
   project_id INTEGER REFERENCES projects(id),
   url TEXT NOT NULL,
   path TEXT NOT NULL,              -- path relativo dentro del sitio
-  status TEXT DEFAULT 'pending',   -- pending | crawled | captured | personalized
+  status TEXT DEFAULT 'pending',   -- pending | crawled | captured | personalized | error
+  http_status INTEGER,             -- HTTP status code of the last request (200, 301, 404, 500, etc.)
   last_crawled_at DATETIME,
   last_captured_at DATETIME,
   last_checked_at DATETIME,
@@ -167,7 +168,9 @@ CREATE TABLE change_detections (
     "delayMs": 1500,
     "delayJitterMs": 500,
     "maxPages": 500,
-    "ignorePatterns": ["/api/", "/admin/", "/_next/"]
+    "ignorePatterns": ["/api/", "/admin/", "/_next/"],
+    "normalizeTrailingSlash": true,
+    "stripQueryParams": true
   },
   "paths": {
     "original": "/ruta/absoluta/fuera/del/repo/mi-proyecto/original",
@@ -218,7 +221,8 @@ CREATE TABLE change_detections (
         "description": "Reemplazar copyright"
       }
     ]
-  }
+  },
+  "copyAssetsMode": "copy"
 }
 ```
 
@@ -226,9 +230,12 @@ CREATE TABLE change_detections (
 
 - `targetUrls`: Se usa para generar las etiquetas `<link rel="alternate" hreflang="...">` en cada página y para reescribir URLs canónicas. No se usa para despliegue.
 - `paths.raw`: Directorio donde se guarda el HTML crudo de Playwright **antes** del procesamiento del adapter. Permite re-procesar sin re-capturar.
-- `translation.maxFragmentTokens`: Límite aproximado de tokens por fragmento HTML enviado a traducir. Fragmentos que excedan este límite se dividirán en sub-fragmentos en boundaries semánticas (hijos directos del elemento).
+- `translation.maxFragmentTokens`: Límite aproximado de tokens por fragmento HTML enviado a traducir. Fragmentos que excedan este límite se dividirán en sub-fragmentos en boundaries semánticas (hijos directos del elemento). La estimación de tokens usa una heurística simple: `Math.ceil(fragment.length / 4)`.
 - `personalization.preTranslation`: Reglas que se aplican al directorio `original/` al final de la Etapa 1, **antes** de traducir. Típicamente: eliminación de elementos innecesarios.
 - `personalization.postTranslation`: Reglas que se aplican a todos los directorios (original + idiomas) en la Etapa 3, **después** de traducir. Típicamente: inyección de contenido propio.
+- `crawl.normalizeTrailingSlash`: Si es `true`, normaliza las URLs eliminando trailing slashes para evitar duplicados (`/about/` → `/about`). Default `true`.
+- `crawl.stripQueryParams`: Si es `true`, elimina query parameters de las URLs descubiertas por el crawler para evitar duplicados. Default `true`.
+- `copyAssetsMode`: Modo de copia de assets a los directorios de idioma. `"copy"` duplica los archivos (independencia total), `"symlink"` crea symlinks para ahorrar disco en desarrollo. Default `"copy"`.
 
 ---
 
@@ -236,7 +243,7 @@ CREATE TABLE change_detections (
 
 ### ETAPA 1 — Captura, exportación estática y pre-personalización
 
-1. **Detección de URLs (crawler)**: Usando `playwright` en modo headless, visitar la URL raíz del proyecto, extraer todos los `<a href>` internos, seguirlos recursivamente respetando el delay configurado, ignorar los patrones definidos en config. Guardar cada URL encontrada en la tabla `pages` con status `pending`. Mostrar progreso en tiempo real en la CLI.
+1. **Detección de URLs (crawler)**: Usando `playwright` en modo headless, visitar la URL raíz del proyecto, extraer todos los `<a href>` internos, seguirlos recursivamente respetando el delay configurado, ignorar los patrones definidos en config. **Normalización de URLs**: antes de insertar en la BD, normalizar cada URL según la config (`normalizeTrailingSlash`, `stripQueryParams`) y deduplicar para evitar capturar la misma página dos veces. Registrar el `http_status` de cada respuesta; las páginas con errores HTTP (4xx, 5xx) se marcan con status `error` y se reportan al final del crawl sin detener el proceso. Los redirects (301/302) se siguen y se registra la URL final. Guardar cada URL encontrada en la tabla `pages` con status `pending`. Mostrar progreso en tiempo real en la CLI.
 
 2. **Captura de cada página**: Para cada URL en la BD con status `pending` o `crawled`:
    - Abrir con Playwright. Ejecutar el hook `beforeCapture()` del adapter (si existe) para esperas específicas del framework.
@@ -253,9 +260,10 @@ CREATE TABLE change_detections (
    - **generic**: Maneja la mayoría de los sitios estáticos (Hugo, Astro, VitePress, etc.) sin tratamiento especial más allá de la reescritura de paths de assets.
    - **nextjs**: Ver sección detallada más adelante. Corrige URLs `/_next/image`, maneja hidratación de React, previene SPA navigation, gestiona `next/font`, etc.
 
-4. **Pre-personalización**: Al finalizar la captura de todas las páginas, aplicar las reglas de `personalization.preTranslation` sobre los HTML del directorio `original/`. Esto garantiza que:
+4. **Pre-personalización**: Este es un paso **separado y manual** dentro del menú de Etapa 1 (no se ejecuta automáticamente al capturar). Aplica las reglas de `personalization.preTranslation` sobre los HTML del directorio `original/`. Esto garantiza que:
    - No se envíen a traducir textos dentro de elementos que serán eliminados (ahorro de tokens de IA).
    - El contenido traducido no incluirá scripts de analytics ni otros elementos no deseados.
+   - El flujo completo de la Etapa 1 requiere ejecutar dos acciones: primero "Capturar páginas", luego "Aplicar pre-personalización".
 
 5. Actualizar status de cada página en BD al completar.
 
@@ -275,14 +283,17 @@ CREATE TABLE change_detections (
    - Atributos técnicos: la IA solo debe traducir contenido legible, manteniendo intactas las clases CSS, IDs y URLs.
    - Bloques `<script type="application/ld+json">` (tienen tratamiento separado como JSON).
 
+   **Extracción de atributos traducibles**: Además de los fragmentos HTML, extraer los valores de atributos `alt`, `title`, `placeholder`, `aria-label` y `aria-description` de todos los elementos que los contengan. Estos se envían como fragmentos adicionales de texto plano (no HTML) al modelo de IA y se traducen por separado. La inyección posterior reemplaza el valor del atributo original con el traducido, tanto en el HTML directo como en el diccionario del runtime patch.
+
    Agrupar fragmentos en batches según `batchSize`.
 
 2. **Consulta de caché**: Antes de enviar un batch a la IA, calcular el SHA-256 de cada fragmento y buscar en `translation_cache`. Los fragmentos con caché válida se reutilizan directamente sin consumir tokens de IA. Solo los fragmentos sin caché se envían a traducir. Tras recibir las traducciones, guardarlas en `translation_cache` para futuros usos.
 
 3. **Traducción y Verificación**: Enviar cada batch de fragmentos HTML nuevos a la API de Ollama (modelos como Gemma 4 son excelentes para esto). El prompt debe instruir traducir los textos manteniendo la estructura HTML intacta.
    **Verificación de integridad**: Tras recibir la respuesta, parsear el HTML traducido y compararlo con el original:
-   - Debe tener exactamente la misma cantidad y tipo de elementos HTML por tag.
-   - Los atributos `class`, `id`, `href`, `src` deben ser idénticos al original.
+   - Debe tener exactamente la misma cantidad de elementos por tipo de tag (ej. mismo número de `<span>`, `<a>`, `<strong>`, etc.), pero **se permite reordenamiento** de los elementos hijos cuando el idioma lo requiere.
+   - Los atributos `class`, `id`, `href`, `src` deben ser idénticos al original. La verificación emparea elementos por tipo de tag + atributos, no por posición en el DOM.
+   - No se verifican text nodes (son los que cambian al traducir).
    - Si la integridad falla, descartar y reintentar la traducción (máximo 3 intentos por fragmento).
 
 4. **Inyección dual** — El HTML traducido se aplica de dos formas complementarias:
@@ -292,8 +303,10 @@ CREATE TABLE change_detections (
    - Esto garantiza que el primer render de la página muestre el texto traducido (bueno para SEO y primer paint).
 
    **b) Generación del patch de runtime `translations.js` (defensa contra hidratación de React):**
-   - Comparar el HTML original y el traducido para extraer el mapeo exacto de nodos de texto e imágenes: `texto_original → texto_traducido`.
-   - Generar un diccionario para `translations.js` que actúa como **capa de defensa**: cuando React re-hidrata el DOM y sobreescribe los textos traducidos con los originales en inglés, el `MutationObserver` detecta el cambio y re-aplica la traducción.
+   - El Stage 2 asigna un atributo `data-sl-id` a cada elemento contenedor de un fragmento traducido (ej. `data-sl-id="f42"`). Este ID se usa como clave en el diccionario del runtime patch.
+   - El diccionario de `translations.js` mapea estos IDs al `innerHTML` traducido del fragmento: `{ "f42": "<span>Mundo</span> asombroso!" }`. Adicionalmente, incluye un mapa de atributos traducibles por selector.
+   - Cuando React re-hidrata el DOM y sobreescribe los textos traducidos con los originales en inglés, el `MutationObserver` detecta el cambio y re-aplica la traducción usando el `innerHTML` del diccionario.
+   - Este enfoque por ID + innerHTML (en lugar de texto plano) permite manejar correctamente fragmentos donde el orden de los elementos cambia entre idiomas (ej. `Awesome <span>world</span>!` → `<span>Mundo</span> asombroso!`).
    - Este script es necesario **únicamente en sitios con frameworks JS que controlan el DOM** (como Next.js). Para sitios estáticos puros, el reemplazo directo es suficiente y no se genera `translations.js`.
 
    Detalle del archivo `translations.js` y su funcionamiento: ver sección "PATCH DE RUNTIME PARA TRADUCCIONES" más adelante.
@@ -324,7 +337,9 @@ CREATE TABLE change_detections (
    });
    ```
 
-7. **Carpetas Independientes**: Guardar cada página traducida en su directorio de idioma configurado, y **copiar todos los assets** a ese directorio. Cada directorio de idioma será totalmente independiente y se publicará sin depender del directorio `original/`. Actualizar status en `page_translations` (no en `pages`). La traducción de cada página se confirma atómicamente en la BD para permitir resumir en caso de error.
+7. **Carpetas Independientes**: Guardar cada página traducida en su directorio de idioma configurado, y copiar los assets a ese directorio (o crear symlinks según `copyAssetsMode` del config). Cada directorio de idioma será totalmente independiente y se publicará sin depender del directorio `original/`. Actualizar status en `page_translations` (no en `pages`). La traducción de cada página se confirma atómicamente en la BD para permitir resumir en caso de error.
+
+8. **Reescritura de enlaces internos absolutos**: Escanear todos los `<a href>` del HTML traducido. Si algún enlace apunta al dominio original con URL absoluta (ej. `https://ejemplo.com/about`), reescribirlo al dominio del idioma de destino configurado en `targetUrls` (ej. `https://es.ejemplo.com/about`). Los enlaces con paths relativos no necesitan reescritura ya que apuntan dentro del mismo directorio de idioma.
 
 ---
 
@@ -348,7 +363,7 @@ Mostrar en CLI un resumen de cuántos elementos fueron afectados por cada regla.
 
 ### ETAPA 4 — Monitoreo de cambios
 
-1. **Verificación**: Para cada URL en la BD, volver a visitar el sitio original con Playwright, capturar el HTML y calcular un checksum (SHA-256). **Evitar falsos positivos**: el checksum debe calcularse ÚNICAMENTE sobre los nodos de texto puros e imágenes visibles extraídos del DOM, excluyendo tags `<script>`, `<link>` o hashes dinámicos del bundler que cambian en cada build. Comparar con el checksum guardado.
+1. **Verificación**: Para cada URL en la BD, volver a visitar el sitio original con Playwright, capturar el HTML y calcular un checksum (SHA-256). **Evitar falsos positivos**: el checksum debe calcularse ÚNICAMENTE sobre el contenido traducible extraído con la **misma lógica del extractor de Stage 2** (fragmentos HTML con texto significativo + atributos traducibles), excluyendo tags `<script>`, `<link>` o hashes dinámicos del bundler que cambian en cada build. Compartir esta lógica de extracción garantiza que solo cambios en contenido relevante para traducción generen alertas. Comparar con el checksum guardado.
 
 2. **Reporte**: Listar en la CLI todas las páginas con cambios detectados, mostrando URL, fecha del último checksum y fecha de detección del cambio.
    Permitir al usuario marcar cambios como `ignored` o lanzar la re-captura y re-traducción de esa página específica.
@@ -420,7 +435,7 @@ staticl10n
     ├── Etapa 1: Captura
     │   ├── Detectar URLs (crawler)
     │   ├── Capturar páginas pendientes
-    │   ├── Re-capturar página específica  →  busca por URL
+    │   ├── Re-capturar página específica
     │   ├── Aplicar pre-personalización (sobre original/)
     │   ├── Vista previa de pre-personalización (dry-run)
     │   └── Ver páginas capturadas
@@ -428,13 +443,15 @@ staticl10n
     ├── Etapa 2: Traducción
     │   ├── Traducir todas las páginas capturadas
     │   ├── Traducir páginas pendientes de traducción
+    │   ├── Traducir a idioma específico  →  selecciona idioma y traduce solo a ese
     │   ├── Re-traducir página específica
     │   ├── Ver estado de traducciones por idioma
+    │   ├── Purgar caché de traducciones  →  permite re-traducir todo (ej. al cambiar de modelo)
     │   └── Ver estadísticas de caché (hits/misses)
     │
     ├── Etapa 3: Post-personalización
     │   ├── Aplicar reglas de post-personalización
-    │   ├── Vista previa de reglas (dry-run, sin modificar archivos)
+    │   ├── Vista previa de reglas (dry-run)
     │   └── Ver reglas configuradas
     │
     └── Etapa 4: Monitoreo
@@ -536,12 +553,20 @@ El adapter Next.js implementa `beforeCapture()` para ejecutar esperas específic
 ```typescript
 async beforeCapture(page: Page, config: ProjectConfig): Promise<void> {
   await page.waitForLoadState('networkidle');
-  // Espera adicional para hidratación completa de React
+  // Espera para hidratación completa de React.
+  // NOTA: NO usar data-nextjs-scroll-focus-boundary porque es un atributo de
+  // desarrollo que no existe en production builds de Next.js.
   await page.waitForFunction(() => {
-    return document.querySelector('[data-nextjs-scroll-focus-boundary]') !== null
-      || document.readyState === 'complete';
+    // Pages Router: __NEXT_DATA__ está presente y el DOM se completó
+    const nextData = document.getElementById('__NEXT_DATA__');
+    if (nextData && document.readyState === 'complete') return true;
+    // App Router: el root #__next existe y el documento está completo
+    const root = document.getElementById('__next');
+    if (root && document.readyState === 'complete') return true;
+    // Fallback genérico
+    return document.readyState === 'complete';
   });
-  // Jitter adicional configurable (default 800ms) para JS post-hydration
+  // Delay adicional configurable (default 800ms) para JS post-hydration
   await delay(config.crawl.postHydrationDelayMs ?? 800);
 }
 ```
@@ -566,11 +591,12 @@ Aunque se conservan los scripts para mantener la interactividad, algunos requier
 Estos tags ya no tienen utilidad sin el servidor de Next.js y generarán errores 404 en el servidor estático:
 
 ```typescript
-// Eliminar con cheerio:
-$('link[rel="preload"][as="script"]').remove();
-$('link[rel="prefetch"]').remove();
-$('link[rel="modulepreload"]').remove();
-// Conservar: link[rel="stylesheet"], link[rel="icon"], link[rel="canonical"]
+// Eliminar SOLO preloads/prefetch de scripts de Next.js (no los de CSS/fuentes legítimos):
+$('link[rel="preload"][as="script"][href*="/_next/"]').remove();
+$('link[rel="prefetch"][href*="/_next/"]').remove();
+$('link[rel="modulepreload"][href*="/_next/"]').remove();
+// Conservar: link[rel="stylesheet"], link[rel="icon"], link[rel="canonical"],
+// y cualquier preload de CSS o fuentes que no sean de /_next/
 ```
 
 #### Prevención de navegación SPA (forzar navegación tradicional)
@@ -700,11 +726,11 @@ Esta es la pieza clave que permite mantener la interactividad de Next.js mientra
 3. React re-hidrata el DOM y sobreescribe los textos traducidos con los originales en inglés
 4. El `MutationObserver` del patch detecta estos cambios y re-aplica las traducciones
 
-**Anti-flicker**: Para evitar que el usuario vea brevemente los textos en inglés durante la rehidratación, se inyecta un `<style>` en el `<head>` del HTML que oculta el body hasta que el patch haya aplicado las traducciones:
+**Anti-flicker**: Para evitar que el usuario vea brevemente los textos en inglés durante la rehidratación, se inyecta un `<style>` en el `<head>` del HTML que oculta el body hasta que el patch haya aplicado las traducciones. Se usa `requestIdleCallback` para no revelar el contenido hasta que la hidratación haya tenido tiempo de ejecutarse:
 
 ```html
 <!-- Inyectado en el <head> por Stage 2 -->
-<style id="staticl10n-hide">body{opacity:0;transition:opacity .1s}</style>
+<style id="staticl10n-hide">body{opacity:0;transition:opacity .15s}</style>
 ```
 
 El archivo `translations.js`:
@@ -715,19 +741,21 @@ El archivo `translations.js`:
 (function() {
   'use strict';
 
-  // Diccionario generado por la IA: { "texto original en inglés": "texto traducido" }
-  // Solo contiene textos que React podría sobreescribir durante la rehidratación
-  const T = {{TRANSLATIONS_JSON}};
+  // Diccionario de fragmentos: mapea data-sl-id al innerHTML traducido.
+  // Usa IDs de fragmento en lugar de texto plano para manejar correctamente
+  // el reordenamiento de elementos entre idiomas.
+  // Ejemplo: { "f1": "<span>Mundo</span> asombroso!", "f2": "Contáctenos" }
+  var F = {{FRAGMENTS_JSON}};
 
-  // Traduce un nodo de texto individual.
-  // Compara el texto completo (trimmed) contra el diccionario, no substrings.
-  function translateTextNode(node) {
-    const trimmed = node.textContent.trim();
-    if (trimmed && T[trimmed] !== undefined) {
-      // Preservar whitespace original (espacios, saltos de línea al inicio/final)
-      const leading = node.textContent.match(/^\s*/)[0];
-      const trailing = node.textContent.match(/\s*$/)[0];
-      node.textContent = leading + T[trimmed] + trailing;
+  // Diccionario de atributos traducibles: { "texto original": "texto traducido" }
+  // Para alt, title, placeholder, aria-label, aria-description
+  var A = {{ATTRIBUTES_JSON}};
+
+  // Aplica la traducción de un fragmento por su data-sl-id
+  function translateFragment(el) {
+    var id = el.getAttribute('data-sl-id');
+    if (id && F[id] !== undefined) {
+      el.innerHTML = F[id];
     }
   }
 
@@ -735,45 +763,64 @@ El archivo `translations.js`:
   function translateAttributes(el) {
     ['alt', 'title', 'placeholder', 'aria-label', 'aria-description'].forEach(function(attr) {
       var val = el.getAttribute(attr);
-      if (val && T[val.trim()] !== undefined) {
-        el.setAttribute(attr, T[val.trim()]);
+      if (val && A[val.trim()] !== undefined) {
+        el.setAttribute(attr, A[val.trim()]);
       }
     });
   }
 
   // Recorre el subárbol DOM a partir de un nodo
   function walk(node) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      translateTextNode(node);
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      // No procesar scripts ni estilos
-      var tag = node.tagName && node.tagName.toLowerCase();
-      if (tag === 'script' || tag === 'style' || tag === 'noscript') return;
-      translateAttributes(node);
-      node.childNodes.forEach(walk);
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    var tag = node.tagName && node.tagName.toLowerCase();
+    if (tag === 'script' || tag === 'style' || tag === 'noscript') return;
+
+    // Si este elemento tiene data-sl-id, traducir su innerHTML completo
+    if (node.hasAttribute('data-sl-id')) {
+      translateFragment(node);
+      // Tras reemplazar innerHTML, traducir atributos de los hijos nuevos
+      node.querySelectorAll('[alt],[title],[placeholder],[aria-label],[aria-description]').forEach(translateAttributes);
+      return; // No descender más, ya reemplazamos el innerHTML completo
     }
+
+    // Si no tiene data-sl-id, traducir atributos y seguir descendiendo
+    translateAttributes(node);
+    node.childNodes.forEach(walk);
   }
 
-  // Función para revelar el contenido tras la traducción inicial
+  // Función para revelar el contenido tras la traducción
   function reveal() {
     document.body.style.opacity = '1';
     var hideEl = document.getElementById('staticl10n-hide');
     if (hideEl) hideEl.remove();
   }
 
-  // Traducción inicial del DOM ya cargado + revelar
-  if (document.body) {
+  // Función principal: traducir y luego revelar después de dar tiempo a la hidratación
+  function init() {
     walk(document.body);
-    reveal();
-  } else {
-    document.addEventListener('DOMContentLoaded', function() {
-      walk(document.body);
-      reveal();
-    });
+    // Retrasar el reveal para dar tiempo a React a hidratar.
+    // requestIdleCallback espera a que el browser esté idle (post-hidratación).
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(function() {
+        walk(document.body); // Re-aplicar por si React ya hidrató
+        reveal();
+      }, { timeout: 1500 });
+    } else {
+      setTimeout(function() {
+        walk(document.body);
+        reveal();
+      }, 500);
+    }
   }
 
-  // Safety timeout: si el script tarda más de 2s, mostrar el contenido de todas formas
-  setTimeout(reveal, 2000);
+  if (document.body) {
+    init();
+  } else {
+    document.addEventListener('DOMContentLoaded', init);
+  }
+
+  // Safety timeout: si el script tarda más de 3s, mostrar el contenido de todas formas
+  setTimeout(reveal, 3000);
 
   // Observar cambios futuros del DOM para cubrir re-renders de React.
   // Esto es lo que hace funcionar la traducción en componentes interactivos
@@ -784,35 +831,31 @@ El archivo `translations.js`:
       mutation.addedNodes.forEach(function(node) {
         walk(node);
       });
-      // Cambios de texto en nodos existentes (React actualizando textContent)
-      if (mutation.type === 'characterData') {
-        translateTextNode(mutation.target);
-      }
     });
   });
 
-  observer.observe(document.body, {
+  observer.observe(document.body || document.documentElement, {
     childList: true,      // Detecta nodos agregados/removidos
-    subtree: true,        // En todo el subárbol, no solo hijos directos
-    characterData: true   // Detecta cambios de texto en nodos existentes
+    subtree: true         // En todo el subárbol, no solo hijos directos
   });
 
 })();
 ```
 
-Este archivo se inyecta en el HTML de cada idioma de destino calculando la ruta relativa dinámicamente según la profundidad de la URL (ej. `../../translations.js`):
+Este archivo se genera **uno por página por idioma** (cada página tiene su propio diccionario de fragmentos). Se inyecta en el HTML de cada página traducida:
 
 ```html
-<script src="../../translations.js" defer></script>
+<script src="translations.js" defer></script>
 ```
 
-ubicado justo antes del `</body>` de cada página traducida.
+ubicado justo antes del `</body>` de cada página traducida. El archivo `translations.js` se guarda junto al `index.html` de cada página (ej. `es/about/translations.js`).
 
 **Limitaciones conocidas del patch de runtime:**
 
-- **Text fragmentation**: React puede dividir texto en múltiples nodos (ej. `"Hello, "` + `userName` + `"!"`). El diccionario no cubre estos fragmentos parciales. El impacto es bajo en sitios de contenido.
+- **Text fragmentation**: React puede dividir texto en múltiples nodos (ej. `"Hello, "` + `userName` + `"!"`). El enfoque por `data-sl-id` + `innerHTML` mitiga esto significativamente, ya que reemplaza el contenido completo del fragmento. Sin embargo, si React re-renderiza solo una parte del subárbol de un fragmento marcado, el observer detectará el cambio y re-aplicará la traducción del fragmento completo.
 - **Texto dinámico**: Contadores, fechas, contenido generado por el usuario no estarán en el diccionario. Esto es inherentemente imposible de cubrir sin traducción en runtime.
-- **Flicker mínimo**: Aunque el anti-flicker oculta el body inicialmente, puede haber micro-flickers en re-renders posteriores (ej. abrir un modal). El MutationObserver actúa en el siguiente microtask, por lo que el flicker es generalmente imperceptible.
+- **Flicker mínimo**: El anti-flicker oculta el body y usa `requestIdleCallback` para revelar después de la hidratación. En re-renders posteriores (ej. abrir un modal), puede haber micro-flickers imperceptibles ya que el MutationObserver actúa en el siguiente microtask.
+- **`data-sl-id` y React**: React preserva atributos desconocidos (`data-*`) durante la hidratación, por lo que `data-sl-id` sobrevive al proceso. Sin embargo, si React reemplaza completamente un subárbol (ej. al navegar con el router), los `data-sl-id` se perderán en los nodos nuevos. El observer detectará los nodos nuevos pero no podrá re-traducirlos sin el ID. Impacto bajo porque la navegación SPA está deshabilitada (cada navegación recarga la página completa).
 
 ---
 
@@ -832,6 +875,18 @@ En lugar de extraer nodos de texto sueltos, se extraen fragmentos de HTML comple
 
 Con nodos de texto sueltos (`"Awesome "`, `"world"`, `"!"`), el modelo no tendría forma de saber que el orden cambia. Con el fragmento HTML completo, puede reorganizar los elementos preservando la semántica y el markup.
 
+**Prompt recomendado para la IA de traducción**:
+
+```text
+Translate the following HTML fragment from {{SOURCE_LANG}} to {{TARGET_LANG}}.
+Rules:
+- Translate ONLY visible text content
+- Do NOT modify any HTML tags, attributes, class names, IDs, or URLs
+- You MAY reorder HTML elements if the target language grammar requires it
+- Preserve ALL whitespace inside tags
+- Return ONLY the translated HTML fragment, no explanations
+```
+
 ---
 
 ### ESTRUCTURA DE ASSETS EN EL DIRECTORIO DE SALIDA
@@ -849,15 +904,22 @@ Para una página Next.js capturada y traducida, cada entorno será totalmente in
 │   └── _assets/                   ← todos los assets descargados
 │
 ├── es/                            ← Carpeta independiente
-│   ├── index.html                 ← HTML con textos traducidos + style anti-flicker
-│   ├── translations.js            ← script de diccionario para runtime patch
-│   ├── about/index.html
-│   └── _assets/                   ← COPIA COMPLETA e independiente de todos los assets
+│   ├── index.html                 ← HTML con textos traducidos + data-sl-id + style anti-flicker
+│   ├── translations.js            ← diccionario de fragmentos para runtime patch (homepage)
+│   ├── about/
+│   │   ├── index.html
+│   │   └── translations.js        ← diccionario específico de /about
+│   └── _assets/                   ← copia o symlink según copyAssetsMode
 │
 └── fr/
     ├── index.html
     ├── translations.js
-    └── _assets/                   ← COPIA COMPLETA e independiente
+    ├── about/
+    │   ├── index.html
+    │   └── translations.js
+    └── _assets/                   ← copia o symlink según copyAssetsMode
 ```
+
+**Nota**: Cada `translations.js` es específico de su página (contiene solo los fragmentos de esa página). Esto evita cargar un diccionario global pesado en sitios grandes.
 
 Cada directorio (original, es, fr) se publicará en su respectivo dominio de forma aislada. Todas las rutas en los HTML deben ser relativas (usando `../` según la profundidad de la página) para que siempre referencien a su propia carpeta `_assets/` local.
