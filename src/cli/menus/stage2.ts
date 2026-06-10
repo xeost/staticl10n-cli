@@ -1,0 +1,212 @@
+import chalk from 'chalk';
+import cliProgress from 'cli-progress';
+import inquirer from 'inquirer';
+import ora from 'ora';
+import type { ProjectConfig } from '../../core/config.js';
+import {
+  dbGetCacheStats,
+  dbGetPagesByProject,
+  dbGetProjectBySlug,
+  dbGetTranslationsByPage,
+  dbPurgeTranslationCache,
+} from '../../core/db.js';
+import { translateProject } from '../../stages/stage2/index.js';
+import { logger } from '../../utils/logger.js';
+
+// ─── Stage 2 Menu ─────────────────────────────────────────────────────────────
+
+export async function stage2Menu(projectSlug: string, config: ProjectConfig): Promise<void> {
+  const { action } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'action',
+      message: chalk.bold('Stage 2: Translation'),
+      choices: [
+        { name: 'Translate all captured pages', value: 'translate-all' },
+        { name: 'Translate pending pages only', value: 'translate-pending' },
+        { name: 'Translate to a specific language', value: 'translate-lang' },
+        { name: 'Re-translate specific page', value: 'retranslate' },
+        { name: 'View translation status by language', value: 'status' },
+        { name: 'Purge translation cache', value: 'purge-cache' },
+        { name: 'View cache statistics', value: 'cache-stats' },
+        { name: chalk.gray('← Back'), value: 'back' },
+      ],
+    },
+  ]);
+
+  switch (action) {
+    case 'translate-all':
+      await runTranslation(projectSlug, config);
+      break;
+    case 'translate-pending':
+      await runTranslation(projectSlug, config, undefined, true);
+      break;
+    case 'translate-lang':
+      await runTranslateLanguage(projectSlug, config);
+      break;
+    case 'retranslate':
+      await runRetranslate(projectSlug, config);
+      break;
+    case 'status':
+      viewTranslationStatus(projectSlug, config);
+      break;
+    case 'purge-cache':
+      await purgeCache(projectSlug);
+      break;
+    case 'cache-stats':
+      viewCacheStats(projectSlug);
+      break;
+    case 'back':
+      return;
+  }
+}
+
+// ─── Actions ──────────────────────────────────────────────────────────────────
+
+async function runTranslation(
+  projectSlug: string,
+  config: ProjectConfig,
+  languages?: string[],
+  pendingOnly = false,
+): Promise<void> {
+  const project = dbGetProjectBySlug(projectSlug)!;
+  let pages = dbGetPagesByProject(project.id, 'captured');
+
+  if (pendingOnly) {
+    // Filter to pages that still have pending translations in any language
+    const langs = languages ?? config.translation.targetLanguages;
+    pages = pages.filter((page) => {
+      const translations = dbGetTranslationsByPage(page.id);
+      return langs.some(
+        (l) => !translations.find((t) => t.language === l && t.status === 'translated'),
+      );
+    });
+  }
+
+  if (pages.length === 0) {
+    logger.info('No pages to translate.');
+    return;
+  }
+
+  const langs = languages ?? config.translation.targetLanguages;
+  const total = pages.length * langs.length;
+
+  const bar = new cliProgress.SingleBar(
+    { format: 'Translating | {bar} | {value}/{total} | {url}' },
+    cliProgress.Presets.shades_classic,
+  );
+  bar.start(total, 0, { url: '' });
+
+  try {
+    const result = await translateProject(
+      projectSlug,
+      config,
+      langs,
+      undefined,
+      (url, lang, done) => {
+        bar.update(done, { url: `[${lang}] ${url.slice(-50)}` });
+      },
+    );
+    bar.stop();
+    logger.success(
+      `Translation complete: ${result.pagesTranslated} pages translated, ${result.pagesFailed} failed.`,
+    );
+    logger.info(
+      `Cache: ${result.cacheHits} hits / ${result.cacheMisses} misses`,
+    );
+  } catch (err) {
+    bar.stop();
+    logger.error(`Translation failed: ${(err as Error).message}`);
+  }
+}
+
+async function runTranslateLanguage(projectSlug: string, config: ProjectConfig): Promise<void> {
+  const { lang } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'lang',
+      message: 'Select target language:',
+      choices: config.translation.targetLanguages,
+    },
+  ]);
+  await runTranslation(projectSlug, config, [lang]);
+}
+
+async function runRetranslate(projectSlug: string, config: ProjectConfig): Promise<void> {
+  const project = dbGetProjectBySlug(projectSlug)!;
+  const pages = dbGetPagesByProject(project.id, 'captured');
+
+  if (pages.length === 0) {
+    logger.info('No captured pages found.');
+    return;
+  }
+
+  const { url } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'url',
+      message: 'Select page to re-translate:',
+      choices: pages.map((p) => ({ name: p.url, value: p.url })),
+    },
+  ]);
+
+  const spinner = ora(`Translating ${url}...`).start();
+  try {
+    const result = await translateProject(projectSlug, config, undefined, url);
+    spinner.stop();
+    logger.success(`Re-translation complete: ${result.pagesTranslated} page(s) updated.`);
+  } catch (err) {
+    spinner.stop();
+    logger.error(`Re-translation failed: ${(err as Error).message}`);
+  }
+}
+
+function viewTranslationStatus(projectSlug: string, config: ProjectConfig): void {
+  const project = dbGetProjectBySlug(projectSlug)!;
+  const pages = dbGetPagesByProject(project.id);
+
+  console.log(chalk.bold('\nTranslation Status:\n'));
+
+  for (const lang of config.translation.targetLanguages) {
+    const translations = pages.flatMap((p) =>
+      dbGetTranslationsByPage(p.id).filter((t) => t.language === lang),
+    );
+    const translated = translations.filter((t) => t.status === 'translated').length;
+    const failed = translations.filter((t) => t.status === 'failed').length;
+    const pending = pages.length - translated - failed;
+
+    console.log(
+      `  ${chalk.cyan(lang.padEnd(8))}` +
+        `  ${chalk.green(`✓ ${translated}`).padEnd(12)}` +
+        `  ${chalk.red(`✗ ${failed}`).padEnd(12)}` +
+        `  ${chalk.yellow(`… ${pending}`)} pending`,
+    );
+  }
+}
+
+async function purgeCache(projectSlug: string): Promise<void> {
+  const { confirmed } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'confirmed',
+      message: 'This will delete all cached translations. Are you sure?',
+      default: false,
+    },
+  ]);
+
+  if (!confirmed) {
+    logger.info('Cache purge cancelled.');
+    return;
+  }
+
+  const project = dbGetProjectBySlug(projectSlug)!;
+  const count = dbPurgeTranslationCache(project.id);
+  logger.success(`Cache purged: ${count} entries removed.`);
+}
+
+function viewCacheStats(projectSlug: string): void {
+  const project = dbGetProjectBySlug(projectSlug)!;
+  const stats = dbGetCacheStats(project.id);
+  console.log(chalk.bold('\nTranslation Cache Statistics:\n'));
+  console.log(`  Total cached entries: ${chalk.cyan(stats.total)}`);
+}
