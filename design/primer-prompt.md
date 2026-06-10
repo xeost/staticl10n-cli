@@ -1,8 +1,6 @@
 # Primer prompt para el desarrollo de `staticl10n`
 
-Desarrolla una herramienta CLI en Node.js + TypeScript llamada "staticl10n"
-(static localization) para capturar sitios web, convertirlos a contenido
-estático y traducirlos a múltiples idiomas.
+Desarrolla una herramienta CLI en Node.js + TypeScript llamada "staticl10n" (static localization) para capturar sitios web, convertirlos a contenido estático y traducirlos a múltiples idiomas.
 
 ---
 
@@ -187,25 +185,16 @@ CREATE TABLE change_detections (
 
 ### ETAPA 1 — Captura y exportación estática
 
-1. **Detección de URLs (crawler)**: Usando `playwright` en modo headless,
-   visitar la URL raíz del proyecto, extraer todos los `<a href>` internos,
-   seguirlos recursivamente respetando el delay configurado, ignorar los
-   patrones definidos en config. Guardar cada URL encontrada en la tabla
-   `pages` con status `pending`. Mostrar progreso en tiempo real en la CLI.
+1. **Detección de URLs (crawler)**: Usando `playwright` en modo headless, visitar la URL raíz del proyecto, extraer todos los `<a href>` internos, seguirlos recursivamente respetando el delay configurado, ignorar los patrones definidos en config. Guardar cada URL encontrada en la tabla `pages` con status `pending`. Mostrar progreso en tiempo real en la CLI.
 
-2. **Captura de cada página**: Para cada URL en la BD con status `pending`
-   o `crawled`, abrir con Playwright y esperar `networkidle`. Capturar el
-   DOM final con `page.content()`. Con `cheerio` procesar el HTML:
+2. **Captura de cada página**: Para cada URL en la BD con status `pending` o `crawled`, abrir con Playwright esperar `networkidle`. Capturar el DOM final con `page.content()`. Con `cheerio` procesar el HTML:
    - Quitar todos los `<script>` tags (el JS de Next.js u otros frameworks)
-   - Identificar todos los assets referenciados: CSS (`<link href>`),
-     imágenes (`<img src>`, `srcset`, CSS background-image), fuentes
+   - Identificar todos los assets referenciados: CSS (`<link href>`), imágenes (`<img src>`, `srcset`, CSS background-image), fuentes
    - Descargar cada asset y guardarlo localmente bajo el directorio `original`
    - Reescribir todas las rutas a paths relativos locales
 
 3. **Particularidades por tipo de sitio** (delegadas al adapter):
-   - **nextjs**: Corregir URLs `/_next/image?url=` extrayendo la imagen
-     original del parámetro `url`. Identificar el objeto `__NEXT_DATA__`
-     embebido en `<script id="__NEXT_DATA__">` y guardarlo como referencia.
+   - **nextjs**: Corregir URLs `/_next/image?url=` extrayendo la imagen original del parámetro `url`. Identificar el objeto `__NEXT_DATA__` embebido en `<script id="__NEXT_DATA__">` y guardarlo como referencia.
    - **astro**: Manejar el prefijo `/_astro/` para assets.
    - **hugo**: Manejar estructura de directorios `/public/`.
    - **vitepress**: Manejar assets bajo `/.vitepress/dist/`.
@@ -216,15 +205,10 @@ CREATE TABLE change_detections (
 
 ### ETAPA 2 — Traducción con Ollama
 
-1. **Extracción de textos**: Con `cheerio` recorrer el HTML de cada página
-   capturada, extraer únicamente nodos de texto (`nodeType === 3`) no vacíos.
-   También extraer atributos traducibles: `alt`, `title`, `placeholder`,
-   `aria-label`. Agrupar en batches según `batchSize` configurado.
+1. **Extracción de textos**: Con `cheerio` recorrer el HTML de cada página capturada, extraer únicamente nodos de texto (`nodeType === 3`) no vacíos.
+   También extraer atributos traducibles: `alt`, `title`, `placeholder`, `aria-label`. Agrupar en batches según `batchSize` configurado.
 
-2. **Traducción**: Enviar cada batch a la API de Ollama. El prompt debe
-   indicar claramente: devolver JSON con el mismo array de strings pero
-   traducidos, no agregar explicaciones, mantener espacios y puntuación,
-   no traducir URLs ni nombres de marca. Reintentar ante errores de red.
+2. **Traducción**: Enviar cada batch a la API de Ollama. El prompt debe indicar claramente: devolver JSON con el mismo array de strings pero traducidos, no agregar explicaciones, mantener espacios y puntuación, no traducir URLs ni nombres de marca. Reintentar ante errores de red.
 
 3. **Inyección dual**:
    - Traducir directamente los nodos de texto en el HTML del idioma de destino
@@ -247,29 +231,21 @@ CREATE TABLE change_detections (
      })();
      ```
 
-   - Inyectar `<script src="./translations.js">` al final del `<body>`
-     de cada página traducida
+   - Inyectar `<script src="./translations.js">` al final del `<body>` de cada página traducida
 
-4. Guardar cada página traducida en su directorio de idioma configurado.
-   Actualizar status en BD.
+4. Guardar cada página traducida en su directorio de idioma configurado. Actualizar status en BD.
 
 ---
 
 ### ETAPA 3 — Personalización
 
-Aplicar las reglas del array `personalization.rules` del config JSON sobre
-los archivos HTML del directorio `original` y de cada traducción. Tipos de
-regla a implementar:
+Aplicar las reglas del array `personalization.rules` del config JSON sobre los archivos HTML del directorio `original` y de cada traducción. Tipos de regla a implementar:
 
-- `remove_element`: Eliminar elementos que coincidan con un selector CSS
-  (usando cheerio). Útil para analytics, chat widgets, etc.
-- `remove_attribute`: Remover un atributo específico de elementos que
-  coincidan con un selector.
+- `remove_element`: Eliminar elementos que coincidan con un selector CSS (usando cheerio). Útil para analytics, chat widgets, etc.
+- `remove_attribute`: Remover un atributo específico de elementos que coincidan con un selector.
 - `replace_text`: Reemplazar un texto exacto por otro en el HTML.
-- `inject_html`: Insertar HTML en una posición: `head_end`, `body_start`,
-  `body_end`, o `after_selector:<selector>`.
-- `add_attribute`: Agregar/modificar un atributo en elementos que coincidan
-  con un selector.
+- `inject_html`: Insertar HTML en una posición: `head_end`, `body_start`, `body_end`, o `after_selector:<selector>`.
+- `add_attribute`: Agregar/modificar un atributo en elementos que coincidan con un selector.
 
 Mostrar en CLI un resumen de cuántos elementos fueron afectados por cada regla.
 
@@ -277,19 +253,12 @@ Mostrar en CLI un resumen de cuántos elementos fueron afectados por cada regla.
 
 ### ETAPA 4 — Monitoreo de cambios
 
-1. **Verificación**: Para cada URL en la BD, volver a visitar el sitio
-   original con Playwright, capturar el HTML, calcular un checksum (SHA-256)
-   del contenido relevante (sin scripts, sin timestamps dinámicos). Comparar
-   con el checksum guardado en la BD.
+1. **Verificación**: Para cada URL en la BD, volver a visitar el sitio original con Playwright, capturar el HTML, calcular un checksum (SHA-256) del contenido relevante (sin scripts, sin timestamps dinámicos). Comparar con el checksum guardado en la BD.
 
-2. **Reporte**: Listar en la CLI todas las páginas con cambios detectados,
-   mostrando URL, fecha del último checksum y fecha de detección del cambio.
-   Permitir al usuario marcar cambios como `ignored` o lanzar la re-captura
-   y re-traducción de esa página específica.
+2. **Reporte**: Listar en la CLI todas las páginas con cambios detectados, mostrando URL, fecha del último checksum y fecha de detección del cambio.
+   Permitir al usuario marcar cambios como `ignored` o lanzar la re-captura y re-traducción de esa página específica.
 
-3. **Soporte para cron**: El comando `staticl10n check <project-slug>` debe
-   poder ejecutarse sin interacción (modo no interactivo), registrando
-   resultados en la BD y en un log file, para poder ser invocado desde cron:
+3. **Soporte para cron**: El comando `staticl10n check <project-slug>` debe poder ejecutarse sin interacción (modo no interactivo), registrando resultados en la BD y en un log file, para poder ser invocado desde cron:
 
    ```text
    0 6 * * * /usr/local/bin/staticl10n check mi-proyecto >> /var/log/staticl10n.log 2>&1
@@ -369,14 +338,11 @@ staticl10n
 - Usar `tsx` para ejecutar TypeScript directamente en desarrollo
 - El binario CLI se registra en `package.json` bajo `bin.staticl10n`
 - Toda operación larga debe mostrar un spinner (`ora`) y progreso (`cli-progress`)
-- Los errores de red en captura/traducción deben reintentarse con backoff
-  exponencial (máximo 3 intentos)
-- El delay entre requests debe incluir jitter aleatorio para ser menos
-  predecible: `delay = baseDelayMs + random(0, jitterMs)`
+- Los errores de red en captura/traducción deben reintentarse con backoff exponencial (máximo 3 intentos)
+- El delay entre requests debe incluir jitter aleatorio para ser menos predecible: `delay = baseDelayMs + random(0, jitterMs)`
 - Playwright debe correr en modo headless, con user-agent de browser real
 - Los logs de cada ejecución deben guardarse en `data/logs/` con timestamp
-- El proyecto debe tener un `README.md` completo con instrucciones de
-  instalación y uso
+- El proyecto debe tener un `README.md` completo con instrucciones de instalación y uso
 
 ---
 
@@ -407,26 +373,19 @@ staticl10n
 }
 ```
 
-Genera el proyecto completo con todos los archivos, tipos TypeScript estrictos,
-manejo de errores robusto y comentarios explicativos en el código. El código
-debe estar en español donde sea apropiado (comentarios, mensajes de la CLI,
-logs) pero los identificadores (variables, funciones, clases) en inglés
-siguiendo convenciones estándar de TypeScript.
+Genera el proyecto completo con todos los archivos, tipos TypeScript estrictos, manejo de errores robusto y comentarios explicativos en el código. El código debe estar en español donde sea apropiado (comentarios, mensajes de la CLI, logs) pero los identificadores (variables, funciones, clases) en inglés siguiendo convenciones estándar de TypeScript.
 
 ---
 
 ## ADAPTER: NEXT.JS — PARTICULARIDADES Y COMPORTAMIENTO ESPERADO
 
-Esta sección describe el comportamiento específico que debe implementar
-`src/adapters/nextjs.ts`. Es el adapter más complejo dado el modelo de
-hidratación de React/Next.js.
+Esta sección describe el comportamiento específico que debe implementar `src/adapters/nextjs.ts`. Es el adapter más complejo dado el modelo de hidratación de React/Next.js.
 
 ---
 
 ### DETECCIÓN DE SITIOS NEXT.JS
 
-El método `detect()` debe identificar un sitio Next.js verificando la
-presencia de cualquiera de estas señales en el HTML:
+El método `detect()` debe identificar un sitio Next.js verificando la presencia de cualquiera de estas señales en el HTML:
 
 - Existencia del elemento `<script id="__NEXT_DATA__">`
 - Scripts con src que contengan `/_next/static/`
@@ -437,34 +396,25 @@ presencia de cualquiera de estas señales en el HTML:
 
 ### EL PROBLEMA CENTRAL: HIDRATACIÓN DE REACT
 
-Next.js, independientemente del modo de renderizado (SSG, SSR, ISR o CSR),
-sigue este ciclo que hace que editar el HTML del servidor sea insuficiente:
+Next.js, independientemente del modo de renderizado (SSG, SSR, ISR o CSR), sigue este ciclo que hace que editar el HTML del servidor sea insuficiente:
 
 1. El servidor entrega HTML estático ya renderizado (para SEO y primer paint)
 2. El browser descarga los bundles JS de React + Next.js
-3. React ejecuta un proceso llamado "hidratación": recorre el DOM existente
-   y lo "adopta", adjuntando event listeners y estado interno
+3. React ejecuta un proceso llamado "hidratación": recorre el DOM existente y lo "adopta", adjuntando event listeners y estado interno
 4. A partir de ese momento React controla el DOM completamente
-5. Cualquier re-render posterior (navegación, interacción, estado) es
-   generado por React desde JS, reemplazando el contenido del DOM
+5. Cualquier re-render posterior (navegación, interacción, estado) es generado por React desde JS, reemplazando el contenido del DOM
 
-Por esto, traducir solo el HTML del servidor no es suficiente: React
-sobreescribirá esos textos con los originales en inglés durante la
-hidratación. La solución implementada en esta herramienta es el
-"patch de runtime" descrito más adelante.
+Por esto, traducir solo el HTML del servidor no es suficiente: React sobreescribirá esos textos con los originales en inglés durante la hidratación. La solución implementada en esta herramienta es el "patch de runtime" descrito más adelante.
 
 ---
 
 ### CAPTURA CON PLAYWRIGHT
 
-Al capturar una página Next.js, el adapter debe seguir estos pasos
-en orden dentro del método `processHTML()`:
+Al capturar una página Next.js, el adapter debe seguir estos pasos en orden dentro del método `processHTML()`:
 
 #### 1. Espera adecuada antes de capturar
 
-No basta con esperar `networkidle`. Next.js puede seguir ejecutando
-código después de que la red se calma. Usar la siguiente estrategia
-de espera combinada:
+No basta con esperar `networkidle`. Next.js puede seguir ejecutando código después de que la red se calma. Usar la siguiente estrategia de espera combinada:
 
 ```typescript
 await page.waitForLoadState('networkidle');
@@ -483,8 +433,7 @@ await delay(config.crawl.postHydrationDelayMs ?? 800);
 const html = await page.content(); // DOM post-hidratación
 ```
 
-Este HTML ya contiene el estado final que el usuario ve, no el HTML
-original del servidor. Es sobre este HTML que se trabaja.
+Este HTML ya contiene el estado final que el usuario ve, no el HTML original del servidor. Es sobre este HTML que se trabaja.
 
 ---
 
@@ -492,21 +441,14 @@ original del servidor. Es sobre este HTML que se trabaja.
 
 #### Eliminación de scripts
 
-Quitar TODOS los `<script>` tags con las siguientes excepciones que
-deben evaluarse y manejarse antes de eliminar:
+Quitar TODOS los `<script>` tags con las siguientes excepciones que deben evaluarse y manejarse antes de eliminar:
 
-- `<script id="__NEXT_DATA__">`: Contiene el JSON con los props
-  iniciales de la página. Guardarlo en un archivo separado
-  `__next_data__.json` en el directorio de la página por si se
-  necesita para análisis futuro, luego eliminar el tag.
-- `<script type="application/ld+json">`: Son datos estructurados
-  para SEO (Schema.org). CONSERVAR, no son código ejecutable,
-  son metadata valiosa para buscadores.
+- `<script id="__NEXT_DATA__">`: Contiene el JSON con los props iniciales de la página. Guardarlo en un archivo separado `__next_data__.json` en el directorio de la página por si se necesita para análisis futuro, luego eliminar el tag.
+- `<script type="application/ld+json">`: Son datos estructurados para SEO (Schema.org). CONSERVAR, no son código ejecutable, son metadata valiosa para buscadores.
 
 #### Eliminación de prefetch y preload de Next.js
 
-Estos tags ya no tienen utilidad sin el JS de Next.js y generarán
-errores 404 en el servidor estático:
+Estos tags ya no tienen utilidad sin el JS de Next.js y generarán errores 404 en el servidor estático:
 
 ```typescript
 // Eliminar con cheerio:
@@ -518,9 +460,7 @@ $('link[rel="modulepreload"]').remove();
 
 #### Corrección del enrutador de Next.js
 
-Next.js agrega atributos propios a los `<a>` tags que ya no funcionan
-sin su router. Limpiarlos para que el HTML funcione como HTML estático
-estándar:
+Next.js agrega atributos propios a los `<a>` tags que ya no funcionan sin su router. Limpiarlos para que el HTML funcione como HTML estático estándar:
 
 ```typescript
 // Estos atributos no tienen efecto sin el JS de Next.js, limpiarlos:
@@ -532,8 +472,7 @@ $('a[data-discover]').removeAttr('data-discover');
 
 ### MANEJO DE IMÁGENES: EL COMPONENTE `<Image>` DE NEXT.JS
 
-El componente `<Image>` de Next.js transforma las URLs de imágenes al
-formato `/_next/image?url=<url_original>&w=<ancho>&q=<calidad>`.
+El componente `<Image>` de Next.js transforma las URLs de imágenes al formato `/_next/image?url=<url_original>&w=<ancho>&q=<calidad>`.
 Este endpoint de optimización no existirá en el servidor estático.
 
 El adapter debe detectar y corregir estos casos:
@@ -571,8 +510,7 @@ $('img').each((_, el) => {
 });
 ```
 
-Adicionalmente, Next.js genera un `<noscript>` con una versión fallback
-de cada imagen. Eliminarlos ya que generan duplicados:
+Adicionalmente, Next.js genera un `<noscript>` con una versión fallback de cada imagen. Eliminarlos ya que generan duplicados:
 
 ```typescript
 // El noscript de Next.js Image siempre contiene un <img> con data-nimg
@@ -589,33 +527,25 @@ Next.js puede servir CSS de dos formas distintas:
 
 **CSS Modules y CSS global (archivos .css externos):**
 Se referencian como `<link href="/_next/static/css/[hash].css">`.
-Estos archivos deben descargarse y sus rutas reescritas a paths
-locales relativos. Son archivos CSS normales que funcionan sin JS.
+Estos archivos deben descargarse y sus rutas reescritas a paths locales relativos. Son archivos CSS normales que funcionan sin JS.
 
 **CSS-in-JS (styled-components, Emotion, o el propio sistema de Next.js):**
-Next.js inyecta estos estilos como `<style>` tags directamente en el
-`<head>` durante el SSR/SSG. Al capturar con Playwright el DOM
-hidratado, estos `<style>` tags ya están presentes en el HTML.
+Next.js inyecta estos estilos como `<style>` tags directamente en el `<head>` durante el SSR/SSG. Al capturar con Playwright el DOM hidratado, estos `<style>` tags ya están presentes en el HTML.
 No requieren ningún tratamiento especial, quedan embebidos en el HTML.
 
-Verificar ambos casos y documentar cuál aplica al proyecto en el log
-de captura.
+Verificar ambos casos y documentar cuál aplica al proyecto en el log de captura.
 
 ---
 
 ### PATCH DE RUNTIME PARA TRADUCCIONES
 
-Esta es la pieza clave que permite mantener la interactividad de Next.js
-mientras se muestran los textos traducidos. El problema sin este patch:
+Esta es la pieza clave que permite mantener la interactividad de Next.js mientras se muestran los textos traducidos. El problema sin este patch:
 
 1. El HTML capturado ya tiene textos en español (traducción directa)
-2. Si se conservan los scripts de Next.js, React re-hidrata el DOM
-   y sobreescribe los textos con los originales en inglés
-3. Si se eliminan los scripts (estrategia de esta herramienta), el
-   contenido estático funciona pero se pierde interactividad
+2. Si se conservan los scripts de Next.js, React re-hidrata el DOM y sobreescribe los textos con los originales en inglés
+3. Si se eliminan los scripts (estrategia de esta herramienta), el contenido estático funciona pero se pierde interactividad
 
-El patch de runtime actúa como una capa de traducción que opera
-sobre el DOM en tiempo real:
+El patch de runtime actúa como una capa de traducción que opera sobre el DOM en tiempo real:
 
 ```javascript
 // Archivo: translations.js — generado automáticamente por staticl10n
@@ -709,15 +639,10 @@ Al extraer textos de páginas Next.js, el adapter debe excluir:
 - Strings que sean solo números, símbolos o whitespace
 - Strings que sean URLs (comienzan con `http`, `/`, `./`, `../`)
 - Strings que sean nombres de clases CSS
-- Strings que parezcan claves técnicas (contienen `__`, `::`  o son
-  camelCase sin espacios de más de 20 caracteres)
-- Strings del bloque `<script type="application/ld+json">` ya que
-  tienen su propio tratamiento (sus valores de texto sí se traducen
-  pero como JSON separado)
+- Strings que parezcan claves técnicas (contienen `__`, `::`  o son camelCase sin espacios de más de 20 caracteres)
+- Strings del bloque `<script type="application/ld+json">` ya que tienen su propio tratamiento (sus valores de texto sí se traducen pero como JSON separado)
 
-Los datos estructurados JSON-LD son valiosos para SEO y sus textos
-visibles (name, description, etc.) sí deben traducirse, pero
-procesándolos como JSON para no romper su estructura:
+Los datos estructurados JSON-LD son valiosos para SEO y sus textos visibles (name, description, etc.) sí deben traducirse, pero procesándolos como JSON para no romper su estructura:
 
 ```typescript
 $('script[type="application/ld+json"]').each((_, el) => {
@@ -759,6 +684,4 @@ original/
             └── inter-var.woff2
 ```
 
-Todas las rutas en los HTML deben ser relativas (usando `../` según
-la profundidad de la página) para que el sitio funcione tanto
-abierto como archivo local como servido por un servidor web.
+Todas las rutas en los HTML deben ser relativas (usando `../` según la profundidad de la página) para que el sitio funcione tanto abierto como archivo local como servido por un servidor web.
