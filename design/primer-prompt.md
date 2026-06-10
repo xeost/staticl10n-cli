@@ -188,8 +188,7 @@ CREATE TABLE change_detections (
 1. **Detección de URLs (crawler)**: Usando `playwright` en modo headless, visitar la URL raíz del proyecto, extraer todos los `<a href>` internos, seguirlos recursivamente respetando el delay configurado, ignorar los patrones definidos en config. Guardar cada URL encontrada en la tabla `pages` con status `pending`. Mostrar progreso en tiempo real en la CLI.
 
 2. **Captura de cada página**: Para cada URL en la BD con status `pending` o `crawled`, abrir con Playwright esperar `networkidle`. Capturar el DOM final con `page.content()`. Con `cheerio` procesar el HTML:
-   - Quitar todos los `<script>` tags (el JS de Next.js u otros frameworks)
-   - Identificar todos los assets referenciados: CSS (`<link href>`), imágenes (`<img src>`, `srcset`, CSS background-image), fuentes
+   - Identificar todos los assets referenciados: CSS (`<link href>`), JS (`<script src>`), imágenes (`<img src>`, `srcset`, CSS background-image), fuentes
    - Descargar cada asset y guardarlo localmente bajo el directorio `original`
    - Reescribir todas las rutas a paths relativos locales
 
@@ -439,11 +438,11 @@ Este HTML ya contiene el estado final que el usuario ve, no el HTML original del
 
 ### PROCESAMIENTO DEL HTML CAPTURADO
 
-#### Eliminación de scripts
+#### Manejo de scripts específicos
 
-Quitar TODOS los `<script>` tags con las siguientes excepciones que deben evaluarse y manejarse antes de eliminar:
+Aunque se conservan los scripts para mantener la interactividad, algunos requieren atención especial:
 
-- `<script id="__NEXT_DATA__">`: Contiene el JSON con los props iniciales de la página. Guardarlo en un archivo separado `__next_data__.json` en el directorio de la página por si se necesita para análisis futuro, luego eliminar el tag.
+- `<script id="__NEXT_DATA__">`: Contiene el JSON con los props iniciales de la página. Guardarlo en un archivo separado `__next_data__.json` en el directorio de la página por si se necesita para análisis futuro.
 - `<script type="application/ld+json">`: Son datos estructurados para SEO (Schema.org). CONSERVAR, no son código ejecutable, son metadata valiosa para buscadores.
 
 #### Eliminación de prefetch y preload de Next.js
@@ -539,13 +538,12 @@ Verificar ambos casos y documentar cuál aplica al proyecto en el log de captura
 
 ### PATCH DE RUNTIME PARA TRADUCCIONES
 
-Esta es la pieza clave que permite mantener la interactividad de Next.js mientras se muestran los textos traducidos. El problema sin este patch:
+Esta es la pieza clave que permite mantener la interactividad de Next.js mientras se muestran los textos traducidos. El problema a resolver es el siguiente:
 
 1. El HTML capturado ya tiene textos en español (traducción directa)
-2. Si se conservan los scripts de Next.js, React re-hidrata el DOM y sobreescribe los textos con los originales en inglés
-3. Si se eliminan los scripts (estrategia de esta herramienta), el contenido estático funciona pero se pierde interactividad
+2. Como se conservan los scripts de Next.js para mantener la interactividad, React re-hidrata el DOM y sobreescribe los textos con los originales en inglés.
 
-El patch de runtime actúa como una capa de traducción que opera sobre el DOM en tiempo real:
+El patch de runtime actúa como una capa de traducción que opera sobre el DOM en tiempo real y soluciona este problema:
 
 ```javascript
 // Archivo: translations.js — generado automáticamente por staticl10n
@@ -634,7 +632,7 @@ ubicado justo antes del `</body>` de cada página traducida.
 
 Al extraer textos de páginas Next.js, el adapter debe excluir:
 
-- Contenido del tag `<script>` (aunque ya fueron eliminados, por seguridad)
+- Contenido del tag `<script>` (ya que no deben traducirse y romperían el código)
 - Contenido del tag `<style>`
 - Strings que sean solo números, símbolos o whitespace
 - Strings que sean URLs (comienzan con `http`, `/`, `./`, `../`)
