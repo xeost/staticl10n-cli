@@ -192,9 +192,10 @@ CREATE TABLE change_detections (
 1. **Detección de URLs (crawler)**: Usando `playwright` en modo headless, visitar la URL raíz del proyecto, extraer todos los `<a href>` internos, seguirlos recursivamente respetando el delay configurado, ignorar los patrones definidos en config. Guardar cada URL encontrada en la tabla `pages` con status `pending`. Mostrar progreso en tiempo real en la CLI.
 
 2. **Captura de cada página**: Para cada URL en la BD con status `pending` o `crawled`, abrir con Playwright esperar `networkidle`. Capturar el DOM final con `page.content()`. Con `cheerio` procesar el HTML:
-   - Identificar todos los assets referenciados: CSS (`<link href>`), JS (`<script src>`), imágenes (`<img src>`, `srcset`, CSS background-image), fuentes
-   - Descargar cada asset y guardarlo localmente bajo el directorio `original`
-   - Reescribir todas las rutas a paths relativos locales
+   - Identificar todos los assets referenciados en el HTML: CSS, JS, imágenes, fuentes.
+   - Para los archivos CSS descargados, analizarlos con expresiones regulares buscando referencias `url(...)` (ej. imágenes o fuentes internas) para descargarlas también.
+   - Descargar cada asset y guardarlo localmente bajo el directorio `original`.
+   - Reescribir todas las rutas a paths relativos locales.
 
 3. **Particularidades por tipo de sitio** (delegadas al adapter):
    - **nextjs**: Corregir URLs `/_next/image?url=` extrayendo la imagen original del parámetro `url`. Identificar el objeto `__NEXT_DATA__` embebido en `<script id="__NEXT_DATA__">` y guardarlo como referencia.
@@ -208,14 +209,14 @@ CREATE TABLE change_detections (
 
 ### ETAPA 2 — Traducción con Ollama
 
-1. **Extracción de textos**: Con `cheerio` recorrer el HTML de cada página capturada, extraer únicamente nodos de texto (`nodeType === 3`) no vacíos.
-   También extraer atributos traducibles: `alt`, `title`, `placeholder`, `aria-label`. Agrupar en batches según `batchSize` configurado.
+1. **Extracción de HTML**: Con `cheerio` extraer fragmentos de HTML directos (ej. bloques de nivel `<section>`, `<div>` o `<p>`) que contengan contenido traducible. Agrupar en batches según `batchSize`.
 
-2. **Traducción**: Enviar cada batch a la API de Ollama. El prompt debe indicar claramente: devolver JSON con el mismo array de strings pero traducidos, no agregar explicaciones, mantener espacios y puntuación, no traducir URLs ni nombres de marca. Reintentar ante errores de red.
+2. **Traducción y Verificación**: Enviar cada batch de fragmentos HTML a la API de Ollama (modelos como Gemma 4 son excelentes para esto). El prompt debe instruir traducir los textos manteniendo la estructura HTML intacta.
+   **Verificación de integridad**: Tras recibir la respuesta, parsear el HTML traducido y compararlo con el original. Debe tener exactamente la misma cantidad y tipo de elementos HTML. Si la integridad falla, descartar y reintentar la traducción.
 
 3. **Inyección dual**:
-   - Traducir directamente los nodos de texto en el HTML del idioma de destino
-   - Generar un archivo `translations.js` con el diccionario completo:
+   - Reemplazar los fragmentos de HTML original con los traducidos en el documento destino.
+   - Comparar el HTML original y el traducido para extraer el mapeo exacto de los nodos de texto e imágenes (Texto original -> Texto traducido) y así generar un diccionario seguro para el archivo `translations.js`:
 
      ```js
      // Generado automáticamente — no editar manualmente
@@ -234,9 +235,9 @@ CREATE TABLE change_detections (
      })();
      ```
 
-   - Inyectar `<script src="./translations.js">` al final del `<body>` de cada página traducida
+   - Inyectar el script `translations.js` al final del `<body>`. La ruta debe calcularse dinámicamente según la profundidad (ej. `../../translations.js` o `/translations.js`).
 
-4. Guardar cada página traducida en su directorio de idioma configurado. Actualizar status en BD.
+4. **Carpetas Independientes**: Guardar cada página traducida en su directorio de idioma configurado, y **copiar todos los assets** a ese directorio. Cada directorio de idioma será totalmente independiente y se publicará sin depender del directorio `original/`. Actualizar status en BD.
 
 ---
 
@@ -256,7 +257,7 @@ Mostrar en CLI un resumen de cuántos elementos fueron afectados por cada regla.
 
 ### ETAPA 4 — Monitoreo de cambios
 
-1. **Verificación**: Para cada URL en la BD, volver a visitar el sitio original con Playwright, capturar el HTML, calcular un checksum (SHA-256) del contenido relevante (sin scripts, sin timestamps dinámicos). Comparar con el checksum guardado en la BD.
+1. **Verificación**: Para cada URL en la BD, volver a visitar el sitio original con Playwright, capturar el HTML y calcular un checksum (SHA-256). **Evitar falsos positivos**: el checksum debe calcularse ÚNICAMENTE sobre los nodos de texto puros e imágenes visibles extraídos del DOM, excluyendo tags `<script>`, `<link>` o hashes dinámicos del bundler que cambian en cada build. Comparar con el checksum guardado.
 
 2. **Reporte**: Listar en la CLI todas las páginas con cambios detectados, mostrando URL, fecha del último checksum y fecha de detección del cambio.
    Permitir al usuario marcar cambios como `ignored` o lanzar la re-captura y re-traducción de esa página específica.
@@ -461,14 +462,26 @@ $('link[rel="modulepreload"]').remove();
 // Conservar: link[rel="stylesheet"], link[rel="icon"], link[rel="canonical"]
 ```
 
-#### Corrección del enrutador de Next.js
+#### Corrección del enrutador de Next.js (Forzar navegación tradicional)
 
-Next.js agrega atributos propios a los `<a>` tags que ya no funcionan sin su router. Limpiarlos para que el HTML funcione como HTML estático estándar:
+Para que Next.js no intercepte la navegación (SPA) y provoque errores al intentar cargar chunks JSON/JS que no fueron descargados, debemos deshabilitarlo en los links:
 
 ```typescript
-// Estos atributos no tienen efecto sin el JS de Next.js, limpiarlos:
+// Limpiar atributos inyectados por el router
 $('a[data-discover]').removeAttr('data-discover');
-// Conservar href, target, rel — son atributos HTML estándar
+
+// Inyectar un script global en el <head> para forzar la recarga en los clicks
+const preventSPAScript = `
+  <script>
+    document.addEventListener('click', function(e) {
+      const link = e.target.closest('a');
+      if (link && link.href && link.origin === location.origin) {
+        e.stopPropagation(); // Evitar que Next.js capture el click
+      }
+    }, true);
+  </script>
+`;
+$('head').prepend(preventSPAScript);
 ```
 
 ---
@@ -622,27 +635,24 @@ El patch de runtime actúa como una capa de traducción que opera sobre el DOM e
 })();
 ```
 
-Este archivo se inyecta en el HTML de cada idioma de destino como:
+Este archivo se inyecta en el HTML de cada idioma de destino calculando la ruta relativa dinámicamente según la profundidad de la URL (ej. `../../translations.js`):
 
 ```html
-<script src="./translations.js" defer></script>
+<script src="../../translations.js" defer></script>
 ```
 
 ubicado justo antes del `</body>` de cada página traducida.
 
 ---
 
-### EXTRACCIÓN DE TEXTOS PARA TRADUCCIÓN
+### EXTRACCIÓN DE HTML PARA TRADUCCIÓN
 
-Al extraer textos de páginas Next.js, el adapter debe excluir:
+En lugar de extraer nodos de texto sueltos, se extraen fragmentos de HTML completos. Al enviar estos fragmentos a la IA, el adapter debe excluir o sanitizar previamente:
 
-- Contenido del tag `<script>` (ya que no deben traducirse y romperían el código)
-- Contenido del tag `<style>`
-- Strings que sean solo números, símbolos o whitespace
-- Strings que sean URLs (comienzan con `http`, `/`, `./`, `../`)
-- Strings que sean nombres de clases CSS
-- Strings que parezcan claves técnicas (contienen `__`, `::`  o son camelCase sin espacios de más de 20 caracteres)
-- Strings del bloque `<script type="application/ld+json">` ya que tienen su propio tratamiento (sus valores de texto sí se traducen pero como JSON separado)
+- Excluir elementos `<script>` y `<style>` completos (no enviarlos a traducir).
+- Ignorar fragmentos que sean solo números, símbolos o whitespace.
+- Excluir atributos técnicos, asegurando que la IA solo traduzca contenido legible y mantenga intactas las clases CSS, IDs y URLs.
+- Bloques `<script type="application/ld+json">` ya que tienen su propio tratamiento (sus valores de texto sí se traducen pero parseándolos como JSON).
 
 Los datos estructurados JSON-LD son valiosos para SEO y sus textos visibles (name, description, etc.) sí deben traducirse, pero procesándolos como JSON para no romper su estructura:
 
@@ -663,27 +673,24 @@ $('script[type="application/ld+json"]').each((_, el) => {
 
 ### ESTRUCTURA DE ASSETS EN EL DIRECTORIO DE SALIDA
 
-Para una página Next.js capturada, la estructura local de salida debe ser:
+Para una página Next.js capturada y traducida, cada entorno será totalmente independiente. La estructura local de salida será así:
 
 ```text
-original/
-└── <project-slug>/
+├── original/
+│   ├── index.html
+│   ├── about/index.html
+│   └── _assets/                 ← todos los assets descargados
+│
+├── es/                          ← Carpeta independiente
+│   ├── index.html
+│   ├── translations.js          ← script de diccionario para runtime patch
+│   ├── about/index.html
+│   └── _assets/                 ← COPIA COMPLETA e independiente de todos los assets
+│
+└── fr/
     ├── index.html
-    ├── translations.js          ← solo en directorios de idiomas
-    ├── about/
-    │   └── index.html
-    ├── blog/
-    │   ├── index.html
-    │   └── my-first-post/
-    │       └── index.html
-    └── _assets/                 ← todos los assets descargados
-        ├── css/
-        │   └── [hash].css
-        ├── images/
-        │   ├── hero.webp
-        │   └── logo.svg
-        └── fonts/
-            └── inter-var.woff2
+    ├── translations.js
+    └── _assets/                 ← COPIA COMPLETA e independiente
 ```
 
-Todas las rutas en los HTML deben ser relativas (usando `../` según la profundidad de la página) para que el sitio funcione tanto abierto como archivo local como servido por un servidor web.
+Cada directorio (original, es, fr) se publicará en su respectivo dominio de forma aislada. Todas las rutas en los HTML deben ser relativas (usando `../` según la profundidad de la página) para que siempre referencien a su propia carpeta `_assets/` local.
