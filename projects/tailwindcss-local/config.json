@@ -24,13 +24,13 @@
   "translation": {
     "provider": "ollama",
     "ollamaUrl": "http://localhost:11434",
-    "model": "llama3.1",
+    "model": "gemma4",
     "sourceLanguage": "en",
     "targetLanguages": [
       "es"
     ],
     "batchSize": 20,
-    "maxFragmentTokens": 2000
+    "maxFragmentTokens": 1200
   },
   "personalization": {
     "preTranslation": [],

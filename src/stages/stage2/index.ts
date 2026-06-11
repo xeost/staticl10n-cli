@@ -74,7 +74,7 @@ export async function translateProject(
         }
 
         // Extract translatable fragments
-        const fragments = extractFragments(originalHtml);
+        const fragments = extractFragments(originalHtml, config.translation.maxFragmentTokens);
 
         // Translate fragments (uses cache)
         const { translatedTexts, cacheHits, cacheMisses } = await translateFragments(

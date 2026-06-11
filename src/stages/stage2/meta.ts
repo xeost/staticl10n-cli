@@ -56,6 +56,12 @@ export async function processMeta(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Ensures a base URL has an https:// scheme — config values may be bare hostnames. */
+function normalizeBaseUrl(url: string): string {
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `https://${url}`;
+}
+
 /** Injects hreflang <link> tags for all configured languages plus x-default. */
 function injectHreflangLinks(
   $: cheerio.CheerioAPI,
@@ -75,7 +81,7 @@ function injectHreflangLinks(
   // Inject a link for each target language
   for (const [lang, baseUrl] of Object.entries(config.targetUrls)) {
     $('head').append(
-      `<link rel="alternate" hreflang="${lang}" href="${baseUrl}${pagePath}" />`,
+      `<link rel="alternate" hreflang="${lang}" href="${normalizeBaseUrl(baseUrl)}${pagePath}" />`,
     );
   }
 
@@ -97,7 +103,7 @@ export function rewriteInternalLinks(
   if (!targetBaseUrl) return html;
 
   const originalOrigin = new URL(config.url).origin;
-  const targetOrigin = new URL(targetBaseUrl).origin;
+  const targetOrigin = new URL(normalizeBaseUrl(targetBaseUrl)).origin;
 
   $('a[href]').each((_i, el) => {
     const href = $(el).attr('href') ?? '';
