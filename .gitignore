@@ -1,6 +1,6 @@
 node_modules/
 dist/
-data/
-projects/
+data/logs/
 *.js.map
 temp-public-static/
+.wrangler/

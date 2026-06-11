@@ -1,0 +1,25 @@
+{
+  "detectedAt": "2026-06-11T12:56:58.917Z",
+  "totalRedirects": 3,
+  "redirects": [
+    {
+      "from": "/docs",
+      "to": "/docs/installation/using-vite",
+      "statusCode": 307,
+      "detectedDuring": "crawl"
+    },
+    {
+      "from": "/docs/installation",
+      "to": "/docs/installation/using-vite",
+      "statusCode": 307,
+      "detectedDuring": "crawl"
+    },
+    {
+      "from": "/docs/text-color",
+      "to": "/docs/color",
+      "statusCode": 307,
+      "detectedDuring": "crawl"
+    }
+  ],
+  "manual": []
+}

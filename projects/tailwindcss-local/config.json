@@ -1,0 +1,40 @@
+{
+  "name": "TailwindCSS Local",
+  "slug": "tailwindcss-local",
+  "url": "http://localhost:3002",
+  "targetUrls": {
+    "es": "tailwindcss.esdocu.com"
+  },
+  "siteType": "nextjs",
+  "crawl": {
+    "delayMs": 10,
+    "delayJitterMs": 500,
+    "maxPages": 500,
+    "ignorePatterns": ["/blog", "/plus"],
+    "normalizeTrailingSlash": true,
+    "stripQueryParams": true
+  },
+  "paths": {
+    "original": "/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/tailwindcss-local/original",
+    "raw": "/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/tailwindcss-local/raw",
+    "translations": {
+      "es": "/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/tailwindcss-local/es"
+    }
+  },
+  "translation": {
+    "provider": "ollama",
+    "ollamaUrl": "http://localhost:11434",
+    "model": "llama3.1",
+    "sourceLanguage": "en",
+    "targetLanguages": [
+      "es"
+    ],
+    "batchSize": 20,
+    "maxFragmentTokens": 2000
+  },
+  "personalization": {
+    "preTranslation": [],
+    "postTranslation": []
+  },
+  "copyAssetsMode": "copy"
+}
