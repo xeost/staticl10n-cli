@@ -7,6 +7,7 @@ import { dbDeletePagesByProject, dbGetPagesByProject, dbGetProjectBySlug } from 
 import { capturePages } from '../../stages/stage1/exporter.js';
 import { applyPrePersonalization } from '../../stages/stage1/personalizer.js';
 import { crawlSite } from '../../stages/stage1/crawler.js';
+import { loadRedirectsFile, writeRedirectsTo } from '../../stages/stage1/redirects.js';
 import { logger } from '../../utils/logger.js';
 
 // ─── Stage 1 Menu ─────────────────────────────────────────────────────────────
@@ -24,6 +25,8 @@ export async function stage1Menu(projectSlug: string, config: ProjectConfig): Pr
         { name: 'Apply pre-personalization (on original/)', value: 'pre-personalize' },
         { name: 'Preview pre-personalization (dry-run)', value: 'pre-personalize-dry' },
         { name: 'View captured pages', value: 'view' },
+        { name: 'View detected redirects', value: 'view-redirects' },
+        { name: 'Regenerate _redirects file', value: 'regen-redirects' },
         { name: chalk.gray('← Back'), value: 'back' },
       ],
     },
@@ -47,6 +50,12 @@ export async function stage1Menu(projectSlug: string, config: ProjectConfig): Pr
       break;
     case 'view':
       viewPages(projectSlug);
+      break;
+    case 'view-redirects':
+      viewRedirects(projectSlug);
+      break;
+    case 'regen-redirects':
+      await runRegenRedirects(projectSlug, config);
       break;
     case 'back':
       return;
@@ -119,10 +128,13 @@ async function runCrawl(projectSlug: string, config: ProjectConfig): Promise<voi
       bar.update(total);
     }, controller.signal);
     bar.stop();
+    const redirectMsg = result.redirectsDetected > 0
+      ? `, ${result.redirectsDetected} redirect(s) detected`
+      : '';
     if (result.aborted) {
-      logger.warn(`Crawl cancelled: ${result.discovered} URLs discovered, ${result.errors} errors.`);
+      logger.warn(`Crawl cancelled: ${result.discovered} URLs discovered, ${result.errors} errors${redirectMsg}.`);
     } else {
-      logger.success(`Crawl complete: ${result.discovered} URLs discovered, ${result.errors} errors.`);
+      logger.success(`Crawl complete: ${result.discovered} URLs discovered, ${result.errors} errors${redirectMsg}.`);
     }
   } catch (err) {
     bar.stop();
@@ -215,6 +227,44 @@ async function runPrePersonalization(
   } catch (err) {
     spinner.stop();
     logger.error(`Pre-personalization failed: ${(err as Error).message}`);
+  }
+}
+
+function viewRedirects(projectSlug: string): void {
+  const data = loadRedirectsFile(projectSlug);
+  const all = [...data.redirects, ...data.manual];
+
+  if (all.length === 0) {
+    logger.info('No redirects detected yet. Run the crawler first.');
+    return;
+  }
+
+  console.log(chalk.bold(`\nDetected redirects (${data.redirects.length}) + manual (${data.manual.length}):\n`));
+  for (const r of data.redirects) {
+    console.log(`  ${chalk.cyan(r.statusCode)}  ${chalk.yellow(r.from)}  →  ${chalk.green(r.to)}`);
+  }
+  if (data.manual.length > 0) {
+    console.log(chalk.bold('\nManual:'));
+    for (const r of data.manual) {
+      const desc = r.description ? chalk.gray(` (${r.description})`) : '';
+      console.log(`  ${chalk.cyan(r.statusCode)}  ${chalk.yellow(r.from)}  →  ${chalk.green(r.to)}${desc}`);
+    }
+  }
+  console.log();
+}
+
+async function runRegenRedirects(projectSlug: string, config: ProjectConfig): Promise<void> {
+  const spinner = ora('Regenerating _redirects files...').start();
+  try {
+    const outputDirs = [config.paths.original, ...Object.values(config.paths.translations)];
+    for (const dir of outputDirs) {
+      writeRedirectsTo(dir, projectSlug);
+    }
+    spinner.stop();
+    logger.success(`_redirects written to ${outputDirs.length} director(ies).`);
+  } catch (err) {
+    spinner.stop();
+    logger.error(`Failed to regenerate _redirects: ${(err as Error).message}`);
   }
 }
 

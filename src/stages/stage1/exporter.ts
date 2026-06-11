@@ -15,6 +15,7 @@ import { delayWithJitter } from '../../utils/delay.js';
 import { logger } from '../../utils/logger.js';
 import { urlToFilePath } from '../../utils/paths.js';
 import { downloadAssets, rewriteDownloadedCssUrls } from './downloader.js';
+import { writeRedirectsTo } from './redirects.js';
 
 // ─── Exporter ─────────────────────────────────────────────────────────────────
 
@@ -158,6 +159,10 @@ export async function capturePages(
   } finally {
     await browser.close();
   }
+
+  // Write _redirects to original/ from the project's redirects.json.
+  // This runs even on partial captures so the file stays up to date.
+  writeRedirectsTo(config.paths.original, projectSlug);
 
   return { captured, failed };
 }

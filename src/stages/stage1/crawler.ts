@@ -9,6 +9,7 @@ import {
 import { abortableDelayWithJitter } from '../../utils/delay.js';
 import { logger } from '../../utils/logger.js';
 import { isInternalUrl, normalizeUrl, urlToFilePath } from '../../utils/paths.js';
+import { type DetectedRedirect, mergeDetectedRedirects } from './redirects.js';
 
 // ─── Crawler ──────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,7 @@ export interface CrawlResult {
   discovered: number;
   errors: number;
   aborted: boolean;
+  redirectsDetected: number;
 }
 
 /**
@@ -47,6 +49,8 @@ export async function crawlSite(
   let discovered = 0;
   let errors = 0;
   let aborted = false;
+  // Keyed by 'from' path to deduplicate across the entire crawl session
+  const redirectMap = new Map<string, DetectedRedirect>();
 
   // Pre-populate visited set from pages already in DB to support resuming
   const existingPages = dbGetPagesByProject(project.id);
@@ -78,12 +82,42 @@ export async function crawlSite(
       const page = await context.newPage();
       let httpStatus = 0;
 
+      // Track the first 3xx response seen for this navigation to detect redirects.
+      // Playwright follows redirects automatically, so intermediate responses are
+      // only visible via the 'response' event.
+      let firstRedirectStatus = 0;
+      const onResponse = (res: { status(): number }): void => {
+        const s = res.status();
+        if (s >= 300 && s < 400 && firstRedirectStatus === 0) {
+          firstRedirectStatus = s;
+        }
+      };
+      page.on('response', onResponse);
+
       try {
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         httpStatus = response?.status() ?? 0;
 
         const finalUrl = page.url();
         const normalizedFinal = normalizeUrl(finalUrl, config.crawl);
+
+        // Register redirect if the final URL differs from the requested one
+        if (firstRedirectStatus > 0) {
+          try {
+            const fromPath = new URL(url).pathname;
+            const toPath = new URL(normalizedFinal).pathname;
+            if (fromPath !== toPath) {
+              redirectMap.set(fromPath, {
+                from: fromPath,
+                to: toPath,
+                statusCode: firstRedirectStatus,
+                detectedDuring: 'crawl',
+              });
+            }
+          } catch {
+            // Ignore malformed URLs
+          }
+        }
 
         const pagePath = urlToFilePath(normalizedFinal);
         const status = httpStatus >= 400 ? 'error' : 'pending';
@@ -111,6 +145,7 @@ export async function crawlSite(
         dbInsertPageIfNew(project.id, url, urlToFilePath(url), 'error', 0);
         errors++;
       } finally {
+        page.off('response', onResponse);
         await page.close();
       }
 
@@ -123,7 +158,14 @@ export async function crawlSite(
     await browser.close();
   }
 
-  return { discovered, errors, aborted };
+  // Persist detected redirects to redirects.json (merges with any from previous crawls)
+  const detectedList = Array.from(redirectMap.values());
+  mergeDetectedRedirects(projectSlug, detectedList);
+  if (detectedList.length > 0) {
+    logger.debug(`Detected ${detectedList.length} redirect(s) and saved to redirects.json`);
+  }
+
+  return { discovered, errors, aborted, redirectsDetected: redirectMap.size };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

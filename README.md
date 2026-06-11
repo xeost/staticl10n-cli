@@ -29,6 +29,7 @@ The result is one independent static directory per language, ready to be deploye
 - **Structural integrity verification** — translated HTML is validated to ensure tags and attributes are preserved; failed checks trigger automatic retries.
 - **Runtime patch for Next.js** (`translations.js`) — a `MutationObserver`-based script that re-applies translations after React rehydration, with anti-flicker support.
 - **SEO-ready output** — `<html lang>`, `<title>`, meta description, Open Graph tags, Twitter Card tags, JSON-LD structured data, and `hreflang` alternate links are all translated and injected.
+- **Redirect detection** — HTTP 3xx redirects are automatically detected during the crawl, saved to a hosting-agnostic `redirects.json`, and a `_redirects` file (Cloudflare Pages / Netlify format) is generated in every output directory.
 - **Personalization engine** — five rule types (`remove_element`, `remove_attribute`, `replace_text`, `inject_html`, `add_attribute`) applied pre- or post-translation.
 - **Cron-friendly monitoring** — `staticl10n check <slug>` runs non-interactively and writes results to a log file.
 - **Resume-safe** — every operation is saved atomically to SQLite; interrupted runs can be resumed without re-downloading.
@@ -133,12 +134,12 @@ Select the project as active, then execute each stage in order:
 
 ```
 Stage 1: Capture
-  → Detect URLs (crawler)       # discovers all pages
-  → Capture pending pages       # downloads HTML + assets
+  → Detect URLs (crawler)       # discovers all pages + detects redirects
+  → Capture pending pages       # downloads HTML + assets, writes _redirects
   → Apply pre-personalization   # removes analytics, cookie banners, etc.
 
 Stage 2: Translation
-  → Translate all captured pages
+  → Translate all captured pages  # _redirects is copied to each language dir
 
 Stage 3: Post-Personalization
   → Apply post-personalization rules  # injects your banners, replaces copyright, etc.
@@ -331,11 +332,13 @@ Each project has a `config.json` with the following structure:
 │   └── about/index.html
 │
 ├── original/                   ← Processed + pre-personalized HTML
+│   ├── _redirects              ← Cloudflare Pages / Netlify redirect rules
 │   ├── index.html
 │   ├── about/index.html
 │   └── _assets/                ← All downloaded assets (CSS, JS, images, fonts)
 │
 ├── es/                         ← Spanish — fully independent, deploy to es.example.com
+│   ├── _redirects              ← Same redirect rules (paths are root-relative)
 │   ├── index.html
 │   ├── translations.js         ← Runtime patch (Next.js sites only)
 │   ├── about/
@@ -344,11 +347,66 @@ Each project has a `config.json` with the following structure:
 │   └── _assets/
 │
 └── fr/                         ← French — fully independent, deploy to fr.example.com
+    ├── _redirects
     ├── index.html
     └── ...
 ```
 
 Each language directory is **fully self-contained** and can be deployed independently.
+
+---
+
+## Redirect Detection
+
+During the crawl (Stage 1), staticl10n intercepts HTTP 3xx responses via Playwright's response events and records every redirect it encounters — including trailing-slash normalizations, URL aliases, and permanent moves.
+
+### How it works
+
+1. **Detection** — for every URL visited, a `response` listener captures the first 3xx status code. If the final URL after navigation differs from the requested one, a redirect entry is recorded.
+2. **Storage** — redirects are persisted to `projects/<slug>/redirects.json` in a hosting-agnostic format. The file is merged on each crawl run, so re-crawls update existing entries.
+3. **Generation** — at the end of `Capture pending pages`, a `_redirects` file in Cloudflare Pages / Netlify format is written to `original/`. Stage 2 copies it to every language directory automatically.
+
+### `redirects.json` schema
+
+```jsonc
+{
+  "detectedAt": "2025-06-11T12:00:00Z",
+  "totalRedirects": 3,
+
+  // Populated automatically by the crawler
+  "redirects": [
+    { "from": "/about-us", "to": "/about", "statusCode": 301, "detectedDuring": "crawl" },
+    { "from": "/services/", "to": "/services", "statusCode": 308, "detectedDuring": "crawl" }
+  ],
+
+  // Add entries here manually for redirects not linked from any crawled page
+  "manual": [
+    { "from": "/promo", "to": "/offers", "statusCode": 302, "description": "Campaign redirect" }
+  ]
+}
+```
+
+### Generated `_redirects` format
+
+```text
+# Generated automatically by staticl10n
+# Detected redirects: 2 | Manual: 1
+
+/about-us  /about  301
+/services/  /services  308
+/promo  /offers  302
+```
+
+### CLI options
+
+Under **Stage 1: Capture** in the interactive menu:
+
+| Option | Description |
+|---|---|
+| **View detected redirects** | Lists all entries from `redirects.json` with status codes |
+| **Regenerate _redirects file** | Re-generates `_redirects` in `original/` and all language directories from the current `redirects.json` |
+
+The **Regenerate** option is useful after manually adding entries to the `manual` array in `redirects.json`.
 
 ---
 
