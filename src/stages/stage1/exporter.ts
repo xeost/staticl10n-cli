@@ -165,6 +165,10 @@ export async function capturePages(
   // This runs even on partial captures so the file stays up to date.
   writeRedirectsTo(config.paths.original, projectSlug);
 
+  // Run adapter-level post-capture hooks (e.g. patching JS chunks).
+  // Runs even when 0 pages were captured so patches are applied on every run.
+  await adapter.postCapture?.(config.paths.original);
+
   return { captured, failed };
 }
 

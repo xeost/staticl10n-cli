@@ -1,8 +1,10 @@
 import * as cheerio from 'cheerio';
+import fs from 'fs-extra';
 import path from 'path';
 import type { Page } from 'playwright';
 import type { ProjectConfig } from '../core/config.js';
 import { delay } from '../utils/delay.js';
+import { logger } from '../utils/logger.js';
 import type { SiteAdapter } from './base.js';
 import { lookupAsset, rewriteCssUrls } from './generic.js';
 
@@ -258,6 +260,46 @@ export class NextjsAdapter implements SiteAdapter {
     // Next.js sites need the runtime patch to defend against React rehydration
     return true;
   }
+
+  async postCapture(outputDir: string): Promise<void> {
+    // ── Patch Next.js Image component default loader ───────────────────────────
+    // The compiled Image component chunks contain a default loader that builds
+    // `/_next/image?url=ENCODED_SRC&w=WIDTH&q=QUALITY` URLs. When the static HTML
+    // has direct paths (from processHTML's rewriteNextImageSrc) but React's client
+    // render calls this loader and generates `/_next/image?url=...`, React detects
+    // a hydration mismatch and throws error #418, falling back to full client
+    // rendering. After the re-render, all <img> elements get `/_next/image?url=...`
+    // which 404s on static hosting.
+    //
+    // Fix: replace the loader's return statement with `return src` so the Image
+    // component uses the source path directly, matching the static HTML.
+    const chunksDir = path.join(outputDir, '_next', 'static', 'chunks');
+    if (!fs.existsSync(chunksDir)) return;
+
+    const files = fs.readdirSync(chunksDir).filter((f) => f.endsWith('.js'));
+    let patchCount = 0;
+
+    for (const file of files) {
+      const filePath = path.join(chunksDir, file);
+      const content = fs.readFileSync(filePath, 'utf-8');
+
+      // Quick skip: only process files that have both markers
+      if (!content.includes('__next_img_default') || !content.includes('encodeURIComponent')) {
+        continue;
+      }
+
+      const patched = patchNextjsImageLoader(content);
+      if (patched !== content) {
+        fs.writeFileSync(filePath, patched, 'utf-8');
+        logger.debug(`Patched Next.js image loader: ${file}`);
+        patchCount++;
+      }
+    }
+
+    if (patchCount > 0) {
+      logger.debug(`Patched image loader in ${patchCount} JS chunk(s).`);
+    }
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -273,6 +315,56 @@ function rewriteNextImageSrc(src: string): string {
     }
   }
   return src;
+}
+
+/**
+ * Patches the Next.js Image component default loader inside a compiled JS chunk.
+ * Replaces the `return \`\${path}?url=\${encodeURIComponent(src)}...\`` return statement
+ * with `return src` so the Image component uses the source path directly rather than
+ * wrapping it in a `/_next/image?url=...` optimization URL.
+ *
+ * The loader pattern always ends with `:""}\`` (the closing of the ternary + outer
+ * template literal). The src variable is captured from `encodeURIComponent(VAR)`.
+ */
+function patchNextjsImageLoader(content: string): string {
+  const startMarker = 'return`';
+  // End of the outer template literal: `:""` (falsy branch) + `}` (closes ${…}) + `` ` `` (closes template)
+  const endMarker = ':""}' + '`';
+  let pos = 0;
+  let result = '';
+
+  while (true) {
+    const start = content.indexOf(startMarker, pos);
+    if (start === -1) {
+      result += content.slice(pos);
+      break;
+    }
+
+    // Peek ahead to check this is the image loader (has `?url=` and `encodeURIComponent`)
+    const lookAhead = content.slice(start, start + 350);
+    const eucMatch = /encodeURIComponent\(([a-z])\)/.exec(lookAhead);
+
+    if (!eucMatch || !lookAhead.includes('?url=')) {
+      result += content.slice(pos, start + startMarker.length);
+      pos = start + startMarker.length;
+      continue;
+    }
+
+    const end = content.indexOf(endMarker, start);
+    if (end === -1 || end - start > 500) {
+      result += content.slice(pos, start + startMarker.length);
+      pos = start + startMarker.length;
+      continue;
+    }
+
+    const srcVar = eucMatch[1];
+    result += content.slice(pos, start);  // content before `return\``
+    result += `return ${srcVar}`;          // passthrough: just return src directly
+    pos = end + endMarker.length;          // skip past `:""}` + backtick
+    // The `}` that closes the enclosing function body remains at `pos`
+  }
+
+  return result;
 }
 
 /** Returns the local path for a Next.js static asset. */

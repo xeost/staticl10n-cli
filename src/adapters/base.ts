@@ -35,4 +35,10 @@ export interface SiteAdapter {
    * True for sites with JS frameworks that control the DOM (Next.js).
    */
   needsRuntimePatch(): boolean;
+
+  /**
+   * Optional hook called once after all pages have been captured.
+   * Use for output-directory–level post-processing (e.g. patching downloaded JS chunks).
+   */
+  postCapture?(outputDir: string): Promise<void>;
 }
