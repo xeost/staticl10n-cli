@@ -111,6 +111,85 @@ export class NextjsAdapter implements SiteAdapter {
 </script>`;
     $('head').prepend(preventSPAScript);
 
+    // ── 6. Theme-class protection ──────────────────────────────────────────────
+    // Problem: the TailwindCSS docs Iframe preview component does
+    //   document.documentElement.className = theme
+    // where `theme` comes from ThemeContext (initially null). This wipes ALL
+    // classes from <html> — font classes, antialiased, dark:bg-gray-950, os-macos
+    // — replacing them with just "null" or the bare theme value. Even after the
+    // MutationObserver re-applies the theme class, the other classes are gone.
+    //
+    // Fix A — className interceptor: intercepts the `.className =` property
+    // setter on document.documentElement. Any simple theme-value assignment
+    // (dark/light/system/null/"") is redirected so it only changes the theme
+    // class while restoring the full set of non-theme base classes captured at
+    // script load time (before any JS runs). Full class strings (containing
+    // spaces or unknown values) are passed through unchanged.
+    //
+    // Fix B — MutationObserver: covers the setAttribute("class", …) path used
+    // by React's commit phase. When the stored preference is missing from the
+    // class after any attribute mutation, _updateTheme re-applies it.
+    const themeGuardScript = `<script>
+(function () {
+  var THEME = { dark: true, light: true, system: true };
+  var htmlEl = document.documentElement;
+
+  // Capture all non-theme base classes at script load time (before any JS runs).
+  var baseClasses = htmlEl.className.split(/[\\s]+/).filter(function (c) {
+    return c && !THEME[c];
+  });
+
+  // Find className descriptor on the prototype chain.
+  var proto = htmlEl, desc;
+  while (proto) {
+    desc = Object.getOwnPropertyDescriptor(proto, 'className');
+    if (desc && desc.set) break;
+    proto = Object.getPrototypeOf(proto);
+  }
+  if (!desc || !desc.set) return;
+
+  // Install interceptor on the element instance (shadows the prototype).
+  Object.defineProperty(htmlEl, 'className', {
+    configurable: true, enumerable: true,
+    get: function () { return desc.get.call(this); },
+    set: function (val) {
+      var str = (val == null ? '' : String(val)).trim();
+      if (str === '' || str === 'null' || THEME[str]) {
+        // Simple theme-value assignment: rebuild from captured base classes.
+        var theme = THEME[str] ? str : null;
+        if (!theme) {
+          // Preserve whatever theme class is already set.
+          var cur = desc.get.call(this);
+          cur.split(/[\\s]+/).forEach(function (c) { if (THEME[c]) theme = c; });
+        }
+        var parts = baseClasses.slice();
+        if (theme) parts.push(theme);
+        desc.set.call(this, parts.join(' '));
+      } else {
+        desc.set.call(this, str);
+      }
+    }
+  });
+
+  // MutationObserver covers setAttribute("class", …) mutations (e.g. React).
+  var key = 'currentTheme';
+  var applying = false;
+  var observer = new MutationObserver(function () {
+    if (applying) return;
+    var stored;
+    try { stored = localStorage.getItem(key); } catch (_) { return; }
+    if (!stored) return;
+    if (document.documentElement.classList.contains(stored)) return;
+    applying = true;
+    try { window._updateTheme && window._updateTheme(stored); } catch (_) {}
+    applying = false;
+  });
+  observer.observe(htmlEl, { attributes: true, attributeFilter: ['class'] });
+  setTimeout(function () { observer.disconnect(); }, 5000);
+})();
+</script>`;
+    $('head').prepend(themeGuardScript);
+
     void pageUrl; // acknowledged but unused at this level
     return $.html();
   }
