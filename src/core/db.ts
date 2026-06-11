@@ -173,6 +173,38 @@ export function dbUpsertPage(
     .run(projectId, url, pagePath, status, httpStatus ?? null);
 }
 
+/** Inserts a page only if it does not already exist (no-op on conflict). */
+export function dbInsertPageIfNew(
+  projectId: number,
+  url: string,
+  pagePath: string,
+  status: string,
+  httpStatus?: number,
+): void {
+  getDb()
+    .prepare(
+      `INSERT OR IGNORE INTO pages (project_id, url, path, status, http_status, last_crawled_at)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+    )
+    .run(projectId, url, pagePath, status, httpStatus ?? null);
+}
+
+/** Deletes all pages (and related records) for a project. Used to reset a crawl from scratch. */
+export function dbDeletePagesByProject(projectId: number): void {
+  const database = getDb();
+  const pageIds = (
+    database.prepare(`SELECT id FROM pages WHERE project_id = ?`).all(projectId) as { id: number }[]
+  ).map((r) => r.id);
+
+  if (pageIds.length > 0) {
+    const placeholders = pageIds.map(() => '?').join(',');
+    database.prepare(`DELETE FROM page_translations WHERE page_id IN (${placeholders})`).run(...pageIds);
+    database.prepare(`DELETE FROM change_detections WHERE page_id IN (${placeholders})`).run(...pageIds);
+  }
+
+  database.prepare(`DELETE FROM pages WHERE project_id = ?`).run(projectId);
+}
+
 export function dbUpdatePageStatus(
   pageId: number,
   status: string,

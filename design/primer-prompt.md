@@ -37,6 +37,7 @@ staticl10n-cli/
 │   ├── stages/
 │   │   ├── stage1/
 │   │   │   ├── crawler.ts        # Detecta todas las URLs del sitio
+│   │   │   ├── redirects.ts      # Detecta y registra redirecciones del sitio
 │   │   │   ├── downloader.ts     # Descarga assets (CSS, imágenes, fuentes)
 │   │   │   ├── exporter.ts       # Ensambla el directorio estático final
 │   │   │   ├── personalizer.ts   # Aplica reglas pre-traducción sobre original/
@@ -67,7 +68,8 @@ staticl10n-cli/
 │   └── staticl10n.db             # Base de datos SQLite
 ├── projects/                     # Generado en runtime, ignorado en git
 │   └── <project-slug>/
-│       └── config.json           # Config de cada proyecto
+│       ├── config.json           # Config de cada proyecto
+│       └── redirects.json        # Redirecciones detectadas del sitio original
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -243,7 +245,16 @@ CREATE TABLE change_detections (
 
 ### ETAPA 1 — Captura, exportación estática y pre-personalización
 
-1. **Detección de URLs (crawler)**: Usando `playwright` en modo headless, visitar la URL raíz del proyecto, extraer todos los `<a href>` internos, seguirlos recursivamente respetando el delay configurado, ignorar los patrones definidos en config. **Normalización de URLs**: antes de insertar en la BD, normalizar cada URL según la config (`normalizeTrailingSlash`, `stripQueryParams`) y deduplicar para evitar capturar la misma página dos veces. Registrar el `http_status` de cada respuesta; las páginas con errores HTTP (4xx, 5xx) se marcan con status `error` y se reportan al final del crawl sin detener el proceso. Los redirects (301/302) se siguen y se registra la URL final. Guardar cada URL encontrada en la tabla `pages` con status `pending`. Mostrar progreso en tiempo real en la CLI.
+1. **Detección de URLs (crawler)**: Usando `playwright` en modo headless, visitar la URL raíz del proyecto, extraer todos los `<a href>` internos, seguirlos recursivamente respetando el delay configurado, ignorar los patrones definidos en config. **Normalización de URLs**: antes de insertar en la BD, normalizar cada URL según la config (`normalizeTrailingSlash`, `stripQueryParams`) y deduplicar para evitar capturar la misma página dos veces. Registrar el `http_status` de cada respuesta; las páginas con errores HTTP (4xx, 5xx) se marcan con status `error` y se reportan al final del crawl sin detener el proceso. Los redirects (301/302) se siguen, se registra la URL final y se almacenan como redirecciones detectadas (ver paso 1b). Guardar cada URL encontrada en la tabla `pages` con status `pending`. Mostrar progreso en tiempo real en la CLI.
+
+   **1b. Detección de redirecciones**: Durante el crawl, interceptar las respuestas HTTP para detectar cadenas de redireccionamiento (301, 302, 307, 308). Para cada URL que responda con un redirect, registrar la URL de origen y la URL destino final (resolviendo cadenas de múltiples saltos). Las redirecciones se guardan en el archivo `redirects.json` del proyecto (no en la BD) para mantener el formato agnóstico al hosting. Esto incluye:
+   - Redirects explícitos del servidor (301/302/307/308)
+   - Redirects de trailing slash (ej. `/about` → `/about/` o viceversa)
+   - Redirects de normalización de mayúsculas (ej. `/About` → `/about`)
+
+   La detección se realiza usando `page.on('response')` de Playwright para interceptar cada response antes de que el browser siga el redirect automáticamente, o alternativamente usando la API de requests de Playwright con `redirect: 'manual'` para inspeccionar los headers `Location`.
+
+   Al finalizar el crawl, se muestra un resumen en la CLI con la cantidad de redirecciones detectadas.
 
 2. **Captura de cada página**: Para cada URL en la BD con status `pending` o `crawled`:
    - Abrir con Playwright. Ejecutar el hook `beforeCapture()` del adapter (si existe) para esperas específicas del framework.
@@ -265,7 +276,9 @@ CREATE TABLE change_detections (
    - El contenido traducido no incluirá scripts de analytics ni otros elementos no deseados.
    - El flujo completo de la Etapa 1 requiere ejecutar dos acciones: primero "Capturar páginas", luego "Aplicar pre-personalización".
 
-5. Actualizar status de cada página en BD al completar.
+5. **Generación de archivo `_redirects`**: Como paso final de la exportación estática, generar el archivo `_redirects` en el directorio `original/` a partir de `redirects.json`. Este archivo se genera en formato compatible con Cloudflare Pages / Netlify (una línea por regla: `/origen /destino statusCode`). La generación es automática al ejecutar la exportación y se repite para cada directorio de traducción en la Etapa 2 (adaptando los paths si fuera necesario). Ver sección "DETECCIÓN Y MANEJO DE REDIRECCIONES" para detalles completos.
+
+6. Actualizar status de cada página en BD al completar.
 
 ---
 
@@ -338,7 +351,7 @@ CREATE TABLE change_detections (
    });
    ```
 
-7. **Carpetas Independientes**: Guardar cada página traducida en su directorio de idioma configurado, y copiar los assets a ese directorio (o crear symlinks según `copyAssetsMode` del config). Cada directorio de idioma será totalmente independiente y se publicará sin depender del directorio `original/`. Actualizar status en `page_translations` (no en `pages`). La traducción de cada página se confirma atómicamente en la BD para permitir resumir en caso de error.
+7. **Carpetas Independientes**: Guardar cada página traducida en su directorio de idioma configurado, y copiar los assets a ese directorio (o crear symlinks según `copyAssetsMode` del config). Cada directorio de idioma será totalmente independiente y se publicará sin depender del directorio `original/`. Generar también el archivo `_redirects` en cada directorio de traducción a partir de `redirects.json` (mismas reglas que el original, los paths no cambian ya que son relativos al root del sitio). Actualizar status en `page_translations` (no en `pages`). La traducción de cada página se confirma atómicamente en la BD para permitir resumir en caso de error.
 
 8. **Reescritura de enlaces internos absolutos**: Escanear todos los `<a href>` del HTML traducido. Si algún enlace apunta al dominio original con URL absoluta (ej. `https://ejemplo.com/about`), reescribirlo al dominio del idioma de destino configurado en `targetUrls` (ej. `https://es.ejemplo.com/about`). Los enlaces con paths relativos no necesitan reescritura ya que apuntan dentro del mismo directorio de idioma.
 
@@ -439,7 +452,9 @@ staticl10n
     │   ├── Re-capturar página específica
     │   ├── Aplicar pre-personalización (sobre original/)
     │   ├── Vista previa de pre-personalización (dry-run)
-    │   └── Ver páginas capturadas
+    │   ├── Ver páginas capturadas
+    │   ├── Ver redirecciones detectadas
+    │   └── Regenerar archivo _redirects
     │
     ├── Etapa 2: Traducción
     │   ├── Traducir todas las páginas capturadas
@@ -477,6 +492,145 @@ staticl10n
 - Todas las etapas deben soportar un modo `--dry-run` que muestre qué se haría sin ejecutar cambios
 - La descarga de assets debe usar la API de requests de Playwright (no `fetch` externo) para mantener cookies y headers consistentes con la sesión del navegador
 - El guardado de estado en BD debe ser atómico por página para permitir resumir operaciones interrumpidas
+
+---
+
+## DETECCIÓN Y MANEJO DE REDIRECCIONES
+
+Los sitios web frecuentemente tienen redirecciones configuradas (trailing slash, páginas movidas, aliases de URLs, etc.) que son esenciales para la navegabilidad. Sin replicarlas en el sitio estático traducido, los usuarios llegarían a errores 404 al seguir enlaces antiguos o al escribir variantes de URLs.
+
+### Cuándo se detectan
+
+Las redirecciones se detectan en la **Etapa 1** durante el crawl, ya que es el momento donde se visitan todas las URLs del sitio y se puede observar el comportamiento HTTP real del servidor. El crawler intercepta las respuestas con status 301, 302, 307 y 308 y registra cada cadena de redirección.
+
+### Almacenamiento: `redirects.json`
+
+Las redirecciones se almacenan en un archivo JSON independiente junto al `config.json` del proyecto (`projects/<slug>/redirects.json`). Esto mantiene el sistema **agnóstico al hosting** — el archivo describe las redirecciones en un formato neutro y luego se genera el archivo específico de la plataforma (`_redirects` para Cloudflare Pages / Netlify).
+
+**Esquema de `redirects.json`:**
+
+```json
+{
+  "detectedAt": "2025-06-11T12:00:00Z",
+  "totalRedirects": 12,
+  "redirects": [
+    {
+      "from": "/about-us",
+      "to": "/about",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "from": "/blog/old-post",
+      "to": "/blog/new-post",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "from": "/services/",
+      "to": "/services",
+      "statusCode": 308,
+      "detectedDuring": "crawl"
+    }
+  ],
+  "manual": [
+    {
+      "from": "/promo",
+      "to": "/offers",
+      "statusCode": 302,
+      "description": "Redirect temporal para campaña"
+    }
+  ]
+}
+```
+
+**Notas sobre el esquema:**
+
+- `redirects[]`: Redirecciones detectadas automáticamente durante el crawl.
+- `manual[]`: Array opcional para que el usuario agregue redirecciones adicionales manualmente (ej. redirecciones que no se detectan en el crawl porque la URL de origen no está enlazada desde ninguna página).
+- `from` y `to`: Paths relativos al root del sitio (sin dominio). Esto permite reutilizarlos en cualquier directorio de idioma.
+- `statusCode`: Código HTTP original detectado (301 = permanente, 302/307 = temporal, 308 = permanente estricto).
+- `detectedDuring`: Indica en qué fase se detectó (`"crawl"` para las automáticas).
+
+### Generación del archivo `_redirects`
+
+A partir de `redirects.json`, se genera un archivo `_redirects` en formato Cloudflare Pages / Netlify en cada directorio de salida:
+
+```text
+# Generado automáticamente por staticl10n
+# Redirecciones detectadas: 12 | Manuales: 1
+
+/about-us  /about  301
+/blog/old-post  /blog/new-post  301
+/services/  /services  308
+/promo  /offers  302
+```
+
+**Ubicación del archivo generado:**
+
+```text
+├── original/
+│   ├── _redirects          ← generado en Etapa 1 (exportación)
+│   ├── index.html
+│   └── ...
+├── es/
+│   ├── _redirects          ← generado en Etapa 2 (al ensamblar directorio de idioma)
+│   ├── index.html
+│   └── ...
+└── fr/
+    ├── _redirects          ← generado en Etapa 2
+    ├── index.html
+    └── ...
+```
+
+El archivo `_redirects` es idéntico en todos los directorios ya que los paths son relativos al root del sitio publicado. Si en el futuro algún hosting requiere un formato diferente (ej. `_headers`, `vercel.json`, `nginx.conf`), se puede agregar un generador adicional sin modificar `redirects.json`.
+
+### Implementación en `src/stages/stage1/redirects.ts`
+
+```typescript
+interface DetectedRedirect {
+  from: string;
+  to: string;
+  statusCode: number;
+  detectedDuring: 'crawl';
+}
+
+interface ManualRedirect {
+  from: string;
+  to: string;
+  statusCode: number;
+  description?: string;
+}
+
+interface RedirectsFile {
+  detectedAt: string;
+  totalRedirects: number;
+  redirects: DetectedRedirect[];
+  manual: ManualRedirect[];
+}
+
+// Lógica de detección durante el crawl:
+// - Usar page.on('response') para interceptar responses con status 3xx
+// - Resolver cadenas de redirects (A → B → C se registra como A → C)
+// - Normalizar paths: almacenar solo el pathname sin dominio
+// - Deduplicar: si la misma redirección se detecta múltiples veces, guardarla una sola vez
+
+// Generación del _redirects:
+// - Leer redirects.json
+// - Combinar arrays 'redirects' + 'manual'
+// - Escribir una línea por regla: `{from}  {to}  {statusCode}`
+// - Guardar en el directorio de destino indicado
+```
+
+### Integración con el flujo
+
+| Momento | Acción |
+|---------|--------|
+| Etapa 1 — Crawl | Detectar redirecciones y guardar en `redirects.json` |
+| Etapa 1 — Exportación | Generar `_redirects` en `original/` |
+| Etapa 2 — Carpetas independientes | Copiar `_redirects` a cada directorio de idioma |
+| Etapa 3 — Post-personalización | No modifica `_redirects` (las reglas solo afectan HTML) |
+| CLI — "Regenerar _redirects" | Permite regenerar manualmente tras editar `redirects.json` |
 
 ---
 
@@ -900,11 +1054,13 @@ Para una página Next.js capturada y traducida, cada entorno será totalmente in
 │   └── about/index.html
 │
 ├── original/                      ← HTML procesado por el adapter + pre-personalizado
+│   ├── _redirects                 ← redirecciones para Cloudflare Pages / Netlify
 │   ├── index.html
 │   ├── about/index.html
 │   └── _assets/                   ← todos los assets descargados
 │
 ├── es/                            ← Carpeta independiente
+│   ├── _redirects                 ← mismo archivo, paths relativos al root
 │   ├── index.html                 ← HTML con textos traducidos + data-sl-id + style anti-flicker
 │   ├── translations.js            ← diccionario de fragmentos para runtime patch (homepage)
 │   ├── about/
@@ -913,6 +1069,7 @@ Para una página Next.js capturada y traducida, cada entorno será totalmente in
 │   └── _assets/                   ← copia o symlink según copyAssetsMode
 │
 └── fr/
+    ├── _redirects
     ├── index.html
     ├── translations.js
     ├── about/

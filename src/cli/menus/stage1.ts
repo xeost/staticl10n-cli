@@ -3,7 +3,7 @@ import cliProgress from 'cli-progress';
 import inquirer from 'inquirer';
 import ora from 'ora';
 import type { ProjectConfig } from '../../core/config.js';
-import { dbGetPagesByProject, dbGetProjectBySlug } from '../../core/db.js';
+import { dbDeletePagesByProject, dbGetPagesByProject, dbGetProjectBySlug } from '../../core/db.js';
 import { capturePages } from '../../stages/stage1/exporter.js';
 import { applyPrePersonalization } from '../../stages/stage1/personalizer.js';
 import { crawlSite } from '../../stages/stage1/crawler.js';
@@ -56,9 +56,59 @@ export async function stage1Menu(projectSlug: string, config: ProjectConfig): Pr
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
 async function runCrawl(projectSlug: string, config: ProjectConfig): Promise<void> {
+  const project = dbGetProjectBySlug(projectSlug)!;
+  const existingPages = dbGetPagesByProject(project.id);
+
+  if (existingPages.length > 0) {
+    const { mode } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'mode',
+        message: `Found ${existingPages.length} page(s) already in the database.`,
+        choices: [
+          { name: 'Resume (skip already discovered URLs)', value: 'resume' },
+          { name: 'Start from scratch (clear existing pages)', value: 'reset' },
+        ],
+      },
+    ]);
+
+    if (mode === 'reset') {
+      dbDeletePagesByProject(project.id);
+      logger.info('Cleared existing pages. Starting fresh crawl.');
+    }
+  }
+
+  const controller = new AbortController();
+
+  // Keypress-based cancellation: works even when spawned via pnpm (which also
+  // receives SIGINT and kills the whole process group before our handler runs).
+  let keypressCleanup: (() => void) | null = null;
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+
+    const onData = (key: string): void => {
+      // q / Q / Escape / Ctrl+C
+      if (key === 'q' || key === 'Q' || key === '\u001b' || key === '\u0003') {
+        controller.abort();
+      }
+    };
+
+    process.stdin.on('data', onData);
+
+    keypressCleanup = (): void => {
+      process.stdin.removeListener('data', onData);
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+      process.stdin.pause();
+    };
+  }
+
   const spinner = ora('Starting crawler...').start();
   const bar = new cliProgress.SingleBar(
-    { format: 'Crawling | {bar} | {value} URLs found' },
+    { format: `Crawling | {bar} | {value} URLs found  ${chalk.gray('[q] cancel')}` },
     cliProgress.Presets.shades_classic,
   );
   bar.start(config.crawl.maxPages, 0);
@@ -67,12 +117,18 @@ async function runCrawl(projectSlug: string, config: ProjectConfig): Promise<voi
   try {
     const result = await crawlSite(projectSlug, config, (_url, total) => {
       bar.update(total);
-    });
+    }, controller.signal);
     bar.stop();
-    logger.success(`Crawl complete: ${result.discovered} URLs discovered, ${result.errors} errors.`);
+    if (result.aborted) {
+      logger.warn(`Crawl cancelled: ${result.discovered} URLs discovered, ${result.errors} errors.`);
+    } else {
+      logger.success(`Crawl complete: ${result.discovered} URLs discovered, ${result.errors} errors.`);
+    }
   } catch (err) {
     bar.stop();
     logger.error(`Crawl failed: ${(err as Error).message}`);
+  } finally {
+    keypressCleanup?.();
   }
 }
 

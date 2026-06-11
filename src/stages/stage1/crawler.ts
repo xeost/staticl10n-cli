@@ -4,9 +4,9 @@ import type { ProjectConfig } from '../../core/config.js';
 import {
   dbGetPagesByProject,
   dbGetProjectBySlug,
-  dbUpsertPage,
+  dbInsertPageIfNew,
 } from '../../core/db.js';
-import { delayWithJitter } from '../../utils/delay.js';
+import { abortableDelayWithJitter } from '../../utils/delay.js';
 import { logger } from '../../utils/logger.js';
 import { isInternalUrl, normalizeUrl, urlToFilePath } from '../../utils/paths.js';
 
@@ -15,6 +15,7 @@ import { isInternalUrl, normalizeUrl, urlToFilePath } from '../../utils/paths.js
 export interface CrawlResult {
   discovered: number;
   errors: number;
+  aborted: boolean;
 }
 
 /**
@@ -26,6 +27,7 @@ export async function crawlSite(
   projectSlug: string,
   config: ProjectConfig,
   onProgress?: (url: string, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<CrawlResult> {
   const project = dbGetProjectBySlug(projectSlug);
   if (!project) throw new Error(`Project "${projectSlug}" not found`);
@@ -44,6 +46,7 @@ export async function crawlSite(
   const visited = new Set<string>();
   let discovered = 0;
   let errors = 0;
+  let aborted = false;
 
   // Pre-populate visited set from pages already in DB to support resuming
   const existingPages = dbGetPagesByProject(project.id);
@@ -53,7 +56,12 @@ export async function crawlSite(
 
   try {
     while (queue.length > 0 && discovered < config.crawl.maxPages) {
-      const rawUrl = queue.shift()!;
+      if (signal?.aborted) {
+        aborted = true;
+        break;
+      }
+
+      const rawUrl = queue.shift()!
       const url = normalizeUrl(rawUrl, config.crawl);
 
       if (visited.has(url)) continue;
@@ -80,7 +88,7 @@ export async function crawlSite(
         const pagePath = urlToFilePath(normalizedFinal);
         const status = httpStatus >= 400 ? 'error' : 'pending';
 
-        dbUpsertPage(project.id, normalizedFinal, pagePath, status, httpStatus);
+        dbInsertPageIfNew(project.id, normalizedFinal, pagePath, status, httpStatus);
         discovered++;
 
         onProgress?.(normalizedFinal, discovered);
@@ -100,7 +108,7 @@ export async function crawlSite(
         }
       } catch (err) {
         logger.warn(`Failed to crawl ${url}: ${(err as Error).message}`);
-        dbUpsertPage(project.id, url, urlToFilePath(url), 'error', 0);
+        dbInsertPageIfNew(project.id, url, urlToFilePath(url), 'error', 0);
         errors++;
       } finally {
         await page.close();
@@ -108,17 +116,45 @@ export async function crawlSite(
 
       // Polite delay with jitter between requests
       if (queue.length > 0) {
-        await delayWithJitter(config.crawl.delayMs, config.crawl.delayJitterMs);
+        await abortableDelayWithJitter(config.crawl.delayMs, config.crawl.delayJitterMs, signal);
       }
     }
   } finally {
     await browser.close();
   }
 
-  return { discovered, errors };
+  return { discovered, errors, aborted };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const ASSET_EXTENSIONS = new Set([
+  // Images
+  'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp', 'tiff', 'avif',
+  // Fonts
+  'woff', 'woff2', 'ttf', 'eot', 'otf',
+  // Archives / downloads
+  'zip', 'tar', 'gz', 'bz2', 'rar', '7z',
+  // Documents
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  // Media
+  'mp4', 'mp3', 'wav', 'ogg', 'webm', 'avi', 'mov',
+  // Code / static
+  'css', 'js', 'mjs', 'cjs', 'map',
+  // Data / feeds
+  'xml', 'rss', 'atom', 'csv', 'txt',
+]);
+
+/** Returns true if the URL path ends with a known non-HTML asset extension. */
+function isAssetUrl(url: string): boolean {
+  try {
+    const { pathname } = new URL(url);
+    const ext = pathname.split('.').pop()?.toLowerCase() ?? '';
+    return ext.length > 0 && ext.length <= 5 && ASSET_EXTENSIONS.has(ext);
+  } catch {
+    return false;
+  }
+}
 
 /** Extracts all internal links from an HTML document. */
 function extractLinks(html: string, pageUrl: string, config: ProjectConfig): string[] {
@@ -133,7 +169,7 @@ function extractLinks(html: string, pageUrl: string, config: ProjectConfig): str
       const absolute = new URL(href, pageUrl).href;
       if (isInternalUrl(absolute, config.url)) {
         const normalized = normalizeUrl(absolute, config.crawl);
-        if (!shouldIgnore(normalized, config.crawl.ignorePatterns)) {
+        if (!isAssetUrl(normalized) && !shouldIgnore(normalized, config.crawl.ignorePatterns)) {
           links.push(normalized);
         }
       }
