@@ -109,18 +109,19 @@ export async function capturePages(
           }
         }
 
-        // Rewrite asset paths to relative local paths.
-        // assetMap values are root-relative (e.g. "_assets/foo.css"). We must
-        // convert them to paths relative to the page's own directory so that
-        // nested pages (e.g. about/index.html) resolve assets correctly when
-        // served by any static HTTP server.
-        const pageDir = path.dirname(pageRow.path); // "." for root, "about" for /about/
-        const pageRelativeAssetMap = new Map<string, string>();
+        // Rewrite asset paths to root-relative paths (e.g. "/_next/static/chunks/X.js").
+        // Root-relative paths (leading "/") work correctly from any page depth when
+        // served from the server root, and are REQUIRED by Next.js's Turbopack runtime:
+        // the runtime uses getAttribute("src") as the promise key for chunk loading,
+        // so the literal attribute value must start with "/_next/" for the key to match
+        // what loadChunkCached creates via q(chunkId). Without this, hydrateRoot is never
+        // called and the page has no JS interactivity.
+        const rootRelativeAssetMap = new Map<string, string>();
         for (const [origUrl, rootRelPath] of assetMap) {
-          const relPath = path.relative(pageDir, rootRelPath).split(path.sep).join('/');
-          pageRelativeAssetMap.set(origUrl, relPath);
+          const rootRelUrl = '/' + rootRelPath.split(path.sep).join('/');
+          rootRelativeAssetMap.set(origUrl, rootRelUrl);
         }
-        processedHtml = adapter.rewriteAssetPaths(processedHtml, pageRelativeAssetMap, pageRow.url);
+        processedHtml = adapter.rewriteAssetPaths(processedHtml, rootRelativeAssetMap, pageRow.url);
 
         // Rewrite absolute url() references inside downloaded CSS files
         // (e.g. @font-face src that still point to the original domain)
