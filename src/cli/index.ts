@@ -13,6 +13,7 @@ import { getProjectConfig } from '../core/project.js';
 import { printChangeReport } from '../stages/stage4/reporter.js';
 import { diffSite } from '../stages/stage4/differ.js';
 import { logger } from '../utils/logger.js';
+import { clearScreen, printBanner, printStageHeader } from './ui.js';
 import { projectsMenu } from './menus/projects.js';
 import { stage1Menu } from './menus/stage1.js';
 import { stage2Menu } from './menus/stage2.js';
@@ -77,8 +78,8 @@ if (isSubcommand || isFlagOnly) {
 // ─── Main Interactive Loop ─────────────────────────────────────────────────────
 
 async function runInteractive(): Promise<void> {
+  clearScreen();
   printBanner();
-
   while (true) {
     const activeProject = session.activeProjectSlug
       ? dbGetProjectBySlug(session.activeProjectSlug)
@@ -126,6 +127,7 @@ async function runInteractive(): Promise<void> {
     }
 
     await handleMainAction(action);
+    printStageHeader('Main Menu');
   }
 }
 
@@ -261,15 +263,3 @@ function viewProjectStatus(projectSlug: string): void {
   console.log();
 }
 
-// ─── Banner ────────────────────────────────────────────────────────────────────
-
-function printBanner(): void {
-  console.log(
-    chalk.cyan.bold(`
-  ╔═══════════════════════════════════════╗
-  ║         staticl10n  v0.1.0           ║
-  ║   Static Localization CLI Tool       ║
-  ╚═══════════════════════════════════════╝
-`),
-  );
-}

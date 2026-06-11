@@ -8,40 +8,45 @@ import { translateProject } from '../../stages/stage2/index.js';
 import { diffSite } from '../../stages/stage4/differ.js';
 import { getPendingChanges, ignoreChange, markReTranslated } from '../../stages/stage4/reporter.js';
 import { logger } from '../../utils/logger.js';
+import { clearScreen, printStageHeader } from '../ui.js';
 
 // ─── Stage 4 Menu ─────────────────────────────────────────────────────────────
 
 export async function stage4Menu(projectSlug: string, config: ProjectConfig): Promise<void> {
-  const { action } = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'action',
-      message: chalk.bold('Stage 4: Monitoring'),
-      choices: [
-        { name: 'Check site for changes', value: 'check' },
-        { name: 'View pages with detected changes', value: 'view-changes' },
-        { name: 'Re-process page with changes', value: 'reprocess' },
-        { name: 'Mark changes as ignored', value: 'ignore' },
-        { name: chalk.gray('← Back'), value: 'back' },
-      ],
-    },
-  ]);
+  clearScreen();
+  while (true) {
+    printStageHeader('Stage 4: Monitoring', config.name);
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: chalk.bold('Stage 4: Monitoring'),
+        choices: [
+          { name: 'Check site for changes', value: 'check' },
+          { name: 'View pages with detected changes', value: 'view-changes' },
+          { name: 'Re-process page with changes', value: 'reprocess' },
+          { name: 'Mark changes as ignored', value: 'ignore' },
+          { name: chalk.gray('← Back'), value: 'back' },
+        ],
+      },
+    ]);
 
-  switch (action) {
-    case 'check':
-      await runDiff(projectSlug, config);
-      break;
-    case 'view-changes':
-      viewChanges(projectSlug);
-      break;
-    case 'reprocess':
-      await reprocessPage(projectSlug, config);
-      break;
-    case 'ignore':
-      await ignoreChanges(projectSlug);
-      break;
-    case 'back':
-      return;
+    switch (action) {
+      case 'check':
+        await runDiff(projectSlug, config);
+        break;
+      case 'view-changes':
+        viewChanges(projectSlug);
+        break;
+      case 'reprocess':
+        await reprocessPage(projectSlug, config);
+        break;
+      case 'ignore':
+        await ignoreChanges(projectSlug);
+        break;
+      case 'back':
+        return;
+    }
   }
 }
 

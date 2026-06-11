@@ -5,41 +5,46 @@ import type { SiteType } from '../../core/config.js';
 import { dbGetProjectBySlug, dbListProjects } from '../../core/db.js';
 import { createProject, deleteProject, slugify } from '../../core/project.js';
 import { logger } from '../../utils/logger.js';
+import { clearScreen, printStageHeader } from '../ui.js';
 
 // ─── Project Management Menu ──────────────────────────────────────────────────
 
 /** Displays and handles the project management submenu. */
 export async function projectsMenu(): Promise<void> {
-  const { action } = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'action',
-      message: 'Project Management',
-      choices: [
-        { name: 'List projects', value: 'list' },
-        { name: 'Create new project', value: 'create' },
-        { name: 'Edit project config', value: 'edit' },
-        { name: 'Delete project', value: 'delete' },
-        { name: chalk.gray('← Back'), value: 'back' },
-      ],
-    },
-  ]);
+  clearScreen();
+  while (true) {
+    printStageHeader('Project Management');
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: 'Project Management',
+        choices: [
+          { name: 'List projects', value: 'list' },
+          { name: 'Create new project', value: 'create' },
+          { name: 'Edit project config', value: 'edit' },
+          { name: 'Delete project', value: 'delete' },
+          { name: chalk.gray('← Back'), value: 'back' },
+        ],
+      },
+    ]);
 
-  switch (action) {
-    case 'list':
-      await listProjectsMenu();
-      break;
-    case 'create':
-      await createProjectMenu();
-      break;
-    case 'edit':
-      await editProjectMenu();
-      break;
-    case 'delete':
-      await deleteProjectMenu();
-      break;
-    case 'back':
-      return;
+    switch (action) {
+      case 'list':
+        await listProjectsMenu();
+        break;
+      case 'create':
+        await createProjectMenu();
+        break;
+      case 'edit':
+        await editProjectMenu();
+        break;
+      case 'delete':
+        await deleteProjectMenu();
+        break;
+      case 'back':
+        return;
+    }
   }
 }
 

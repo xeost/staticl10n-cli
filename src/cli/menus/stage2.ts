@@ -12,52 +12,57 @@ import {
 } from '../../core/db.js';
 import { translateProject } from '../../stages/stage2/index.js';
 import { logger } from '../../utils/logger.js';
+import { clearScreen, printStageHeader } from '../ui.js';
 
 // ─── Stage 2 Menu ─────────────────────────────────────────────────────────────
 
 export async function stage2Menu(projectSlug: string, config: ProjectConfig): Promise<void> {
-  const { action } = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'action',
-      message: chalk.bold('Stage 2: Translation'),
-      choices: [
-        { name: 'Translate all captured pages', value: 'translate-all' },
-        { name: 'Translate pending pages only', value: 'translate-pending' },
-        { name: 'Translate to a specific language', value: 'translate-lang' },
-        { name: 'Re-translate specific page', value: 'retranslate' },
-        { name: 'View translation status by language', value: 'status' },
-        { name: 'Purge translation cache', value: 'purge-cache' },
-        { name: 'View cache statistics', value: 'cache-stats' },
-        { name: chalk.gray('← Back'), value: 'back' },
-      ],
-    },
-  ]);
+  clearScreen();
+  while (true) {
+    printStageHeader('Stage 2: Translation', config.name);
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: chalk.bold('Stage 2: Translation'),
+        choices: [
+          { name: 'Translate all captured pages', value: 'translate-all' },
+          { name: 'Translate pending pages only', value: 'translate-pending' },
+          { name: 'Translate to a specific language', value: 'translate-lang' },
+          { name: 'Re-translate specific page', value: 'retranslate' },
+          { name: 'View translation status by language', value: 'status' },
+          { name: 'Purge translation cache', value: 'purge-cache' },
+          { name: 'View cache statistics', value: 'cache-stats' },
+          { name: chalk.gray('← Back'), value: 'back' },
+        ],
+      },
+    ]);
 
-  switch (action) {
-    case 'translate-all':
-      await runTranslation(projectSlug, config);
-      break;
-    case 'translate-pending':
-      await runTranslation(projectSlug, config, undefined, true);
-      break;
-    case 'translate-lang':
-      await runTranslateLanguage(projectSlug, config);
-      break;
-    case 'retranslate':
-      await runRetranslate(projectSlug, config);
-      break;
-    case 'status':
-      viewTranslationStatus(projectSlug, config);
-      break;
-    case 'purge-cache':
-      await purgeCache(projectSlug);
-      break;
-    case 'cache-stats':
-      viewCacheStats(projectSlug);
-      break;
-    case 'back':
-      return;
+    switch (action) {
+      case 'translate-all':
+        await runTranslation(projectSlug, config);
+        break;
+      case 'translate-pending':
+        await runTranslation(projectSlug, config, undefined, true);
+        break;
+      case 'translate-lang':
+        await runTranslateLanguage(projectSlug, config);
+        break;
+      case 'retranslate':
+        await runRetranslate(projectSlug, config);
+        break;
+      case 'status':
+        viewTranslationStatus(projectSlug, config);
+        break;
+      case 'purge-cache':
+        await purgeCache(projectSlug);
+        break;
+      case 'cache-stats':
+        viewCacheStats(projectSlug);
+        break;
+      case 'back':
+        return;
+    }
   }
 }
 

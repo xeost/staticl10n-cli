@@ -4,36 +4,41 @@ import ora from 'ora';
 import type { ProjectConfig } from '../../core/config.js';
 import { applyPostPersonalization, listPostRules } from '../../stages/stage3/rules.js';
 import { logger } from '../../utils/logger.js';
+import { clearScreen, printStageHeader } from '../ui.js';
 
 // ─── Stage 3 Menu ─────────────────────────────────────────────────────────────
 
 export async function stage3Menu(projectSlug: string, config: ProjectConfig): Promise<void> {
-  const { action } = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'action',
-      message: chalk.bold('Stage 3: Post-Personalization'),
-      choices: [
-        { name: 'Apply post-personalization rules', value: 'apply' },
-        { name: 'Preview rules (dry-run)', value: 'dry' },
-        { name: 'View configured rules', value: 'view' },
-        { name: chalk.gray('← Back'), value: 'back' },
-      ],
-    },
-  ]);
+  clearScreen();
+  while (true) {
+    printStageHeader('Stage 3: Post-Personalization', config.name);
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: chalk.bold('Stage 3: Post-Personalization'),
+        choices: [
+          { name: 'Apply post-personalization rules', value: 'apply' },
+          { name: 'Preview rules (dry-run)', value: 'dry' },
+          { name: 'View configured rules', value: 'view' },
+          { name: chalk.gray('← Back'), value: 'back' },
+        ],
+      },
+    ]);
 
-  switch (action) {
-    case 'apply':
-      await runPostPersonalization(projectSlug, config, false);
-      break;
-    case 'dry':
-      await runPostPersonalization(projectSlug, config, true);
-      break;
-    case 'view':
-      viewRules(config);
-      break;
-    case 'back':
-      return;
+    switch (action) {
+      case 'apply':
+        await runPostPersonalization(projectSlug, config, false);
+        break;
+      case 'dry':
+        await runPostPersonalization(projectSlug, config, true);
+        break;
+      case 'view':
+        viewRules(config);
+        break;
+      case 'back':
+        return;
+    }
   }
 }
 
