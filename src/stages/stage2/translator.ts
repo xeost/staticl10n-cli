@@ -149,30 +149,63 @@ async function callOllama(
   }
 
   const data = (await response.json()) as { response: string };
-  return data.response.trim();
+  return cleanResponse(data.response, isAttribute);
 }
 
 /** Builds the translation prompt for an HTML fragment. */
 function buildHtmlPrompt(html: string, sourceLang: string, targetLang: string): string {
-  return `Translate the following HTML fragment from ${sourceLang} to ${targetLang}.
-Rules:
-- Translate ONLY visible text content
-- Do NOT modify any HTML tags, attributes, class names, IDs, or URLs
-- You MAY reorder HTML elements if the target language grammar requires it
-- Preserve ALL whitespace inside tags
-- Return ONLY the translated HTML fragment, no explanations
+  return `Translate the visible text inside the <source> tags from ${sourceLang} to ${targetLang}. Keep all HTML tags, attributes, class names, IDs, and URLs exactly as-is. Reply with only the translated HTML, nothing else.
 
-${html}`;
+<source>
+${html}
+</source>`;
 }
 
 /** Builds the translation prompt for a plain-text attribute value. */
 function buildAttributePrompt(text: string, sourceLang: string, targetLang: string): string {
-  return `Translate the following text from ${sourceLang} to ${targetLang}.
-Rules:
-- Return ONLY the translated text, no explanations
-- Preserve any special characters or formatting
+  return `Translate the text inside the <source> tags from ${sourceLang} to ${targetLang}. Reply with only the translated text, nothing else.
 
-${text}`;
+<source>${text}</source>`;
+}
+
+/**
+ * Strips XML wrappers the model may add (e.g. <translation>...</translation>)
+ * and detects obvious prompt leakage (model returning the prompt rules instead of a translation).
+ */
+function cleanResponse(raw: string, isAttribute: boolean): string {
+  let text = raw.trim();
+
+  // Strip common XML wrapper tags models add around their answer
+  text = text.replace(/^```[\w]*\n?/m, '').replace(/\n?```$/m, '').trim();
+  for (const tag of ['translation', 'result', 'output', 'answer', 'source']) {
+    const open = new RegExp(`^<${tag}[^>]*>\\s*`, 'i');
+    const close = new RegExp(`\\s*<\/${tag}>$`, 'i');
+    text = text.replace(open, '').replace(close, '').trim();
+  }
+
+  // For attribute translations: if the model echoed the prompt instructions, strip them.
+  // Pattern: model output starts with the instruction sentence then newline then the real answer.
+  if (isAttribute) {
+    const instructionLine = /^Translate the text.*?\n/i;
+    text = text.replace(instructionLine, '').trim();
+  }
+
+  return text;
+}
+
+/**
+ * Returns true if the response looks like the model returned prompt instructions
+ * instead of (or in addition to) the actual translation.
+ */
+function hasPromptLeakage(text: string): boolean {
+  return (
+    /\bReturn ONLY\b/i.test(text) ||
+    /\bDevuelve SOLO\b/i.test(text) ||
+    /\bRegresa SOLO\b/i.test(text) ||
+    /^\s*-\s+(Return|Translate|Preserve|Keep|Do NOT)/im.test(text) ||
+    /^\s*-\s+(Devuelve|Regresa|Preserva|Conserva|No modif)/im.test(text) ||
+    /^\s*(Rules?|Normas?|Reglas?):/im.test(text)
+  );
 }
 
 /**
@@ -185,7 +218,7 @@ function verifyTranslationIntegrity(
   translated: string,
   isAttribute: boolean,
 ): boolean {
-  if (isAttribute) return translated.trim().length > 0;
+  if (isAttribute) return translated.trim().length > 0 && !hasPromptLeakage(translated);
 
   const originalCounts = countTags(original);
   const translatedCounts = countTags(translated);

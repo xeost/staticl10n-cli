@@ -30,9 +30,11 @@ export function injectTranslations(
       // Replace innerHTML of the element with data-sl-id
       $(`[data-sl-id="${fragment.id}"]`).each((_i, el) => {
         if (el.type === 'tag') {
-          // Replace inner HTML with the translated fragment's inner HTML
+          // The model returns the full outer element; extract its inner HTML.
+          // Use body > first-child to avoid the <html><head></head><body> Cheerio wrapper.
           const $translated = cheerio.load(translated);
-          const innerHtml = $translated.root().children().first().html() ?? translated;
+          const firstChild = $translated('body').children().first();
+          const innerHtml = (firstChild.length > 0 ? firstChild.html() : $translated('body').html()) ?? translated;
           $(el).html(innerHtml);
         }
       });
@@ -64,7 +66,8 @@ export function generateRuntimePatch(
     } else {
       // Map data-sl-id → translated innerHTML
       const $t = cheerio.load(translated);
-      const inner = $t.root().children().first().html() ?? translated;
+      const firstChild = $t('body').children().first();
+      const inner = (firstChild.length > 0 ? firstChild.html() : $t('body').html()) ?? translated;
       fragmentDict[fragment.id] = inner;
     }
   }
@@ -80,12 +83,10 @@ export function generateRuntimePatch(
 
   var A = ${JSON.stringify(attributeDict)};
 
-  function translateFragment(el) {
-    var id = el.getAttribute('data-sl-id');
-    if (id && F[id] !== undefined) {
-      el.innerHTML = F[id];
-    }
-  }
+  // Cached {el, id} pairs captured before React removes data-sl-id during hydration.
+  // applyAll() uses these direct DOM references so it works even after the attribute is gone.
+  var entries = [];
+  var revealed = false;
 
   function translateAttributes(el) {
     ['alt', 'title', 'placeholder', 'aria-label', 'aria-description'].forEach(function(attr) {
@@ -100,18 +101,30 @@ export function generateRuntimePatch(
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     var tag = node.tagName && node.tagName.toLowerCase();
     if (tag === 'script' || tag === 'style' || tag === 'noscript') return;
-
     if (node.hasAttribute('data-sl-id')) {
-      translateFragment(node);
+      var id = node.getAttribute('data-sl-id');
+      if (F[id] !== undefined) node.innerHTML = F[id];
       node.querySelectorAll('[alt],[title],[placeholder],[aria-label],[aria-description]').forEach(translateAttributes);
       return;
     }
-
     translateAttributes(node);
     node.childNodes.forEach(walk);
   }
 
+  // Re-applies all cached translations using stored element references.
+  // Disconnects the observer first to prevent infinite mutation loops.
+  function applyAll() {
+    observer.disconnect();
+    entries.forEach(function(e) {
+      if (e.el.isConnected) e.el.innerHTML = F[e.id];
+    });
+    document.querySelectorAll('[alt],[title],[placeholder],[aria-label],[aria-description]').forEach(translateAttributes);
+    observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+  }
+
   function reveal() {
+    if (revealed) return;
+    revealed = true;
     document.body.style.opacity = '1';
     var hideEl = document.getElementById('staticl10n-hide');
     if (hideEl) hideEl.remove();
@@ -119,16 +132,23 @@ export function generateRuntimePatch(
 
   function init() {
     walk(document.body);
+
+    // Cache element references NOW, before React hydration removes data-sl-id attributes.
+    document.querySelectorAll('[data-sl-id]').forEach(function(el) {
+      var id = el.getAttribute('data-sl-id');
+      if (id && F[id] !== undefined) entries.push({ el: el, id: id });
+    });
+
+    // Wait for React hydration to finish (browser idle), then re-apply and reveal.
+    // The timeout is a fallback: requestIdleCallback won't fire until React's tasks complete.
+    function afterHydration() {
+      applyAll();
+      reveal();
+    }
     if (window.requestIdleCallback) {
-      window.requestIdleCallback(function() {
-        walk(document.body);
-        reveal();
-      }, { timeout: 1500 });
+      requestIdleCallback(afterHydration, { timeout: 2500 });
     } else {
-      setTimeout(function() {
-        walk(document.body);
-        reveal();
-      }, 500);
+      setTimeout(afterHydration, 1200);
     }
   }
 
@@ -138,20 +158,34 @@ export function generateRuntimePatch(
     document.addEventListener('DOMContentLoaded', init);
   }
 
-  setTimeout(reveal, 3000);
+  // Absolute safety net: reveal even if requestIdleCallback never fires.
+  setTimeout(reveal, 5000);
 
+  // After initial hydration, watch for React re-renders that overwrite translations.
+  // If any of our tracked elements (or their children) are mutated, re-apply.
   var observer = new MutationObserver(function(mutations) {
-    mutations.forEach(function(mutation) {
-      mutation.addedNodes.forEach(function(node) {
-        walk(node);
-      });
-    });
+    var needsUpdate = false;
+    for (var i = 0; i < mutations.length && !needsUpdate; i++) {
+      var t = mutations[i].target;
+      for (var j = 0; j < entries.length; j++) {
+        if (entries[j].el === t || (entries[j].el.contains && entries[j].el.contains(t))) {
+          needsUpdate = true;
+          break;
+        }
+      }
+    }
+    if (needsUpdate) {
+      applyAll();
+    } else {
+      for (var i = 0; i < mutations.length; i++) {
+        mutations[i].addedNodes.forEach(function(n) {
+          if (n.nodeType === Node.ELEMENT_NODE) walk(n);
+        });
+      }
+    }
   });
 
-  observer.observe(document.body || document.documentElement, {
-    childList: true,
-    subtree: true
-  });
+  observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
 
 })();
 `;
