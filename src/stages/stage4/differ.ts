@@ -92,7 +92,7 @@ export async function diffSite(
  * dynamic scripts, bundler hashes, etc.
  */
 export function computeTranslatableChecksum(html: string): string {
-  const fragments = extractFragments(html);
+  const { fragments } = extractFragments(html);
   const content = fragments.map((f) => f.outerHtml).join('|');
   return crypto.createHash('sha256').update(content, 'utf-8').digest('hex');
 }

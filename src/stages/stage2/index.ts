@@ -73,8 +73,8 @@ export async function translateProject(
           continue;
         }
 
-        // Extract translatable fragments
-        const fragments = extractFragments(originalHtml, config.translation.maxFragmentTokens);
+        // Extract translatable fragments (also returns HTML with data-sl-id attributes injected)
+        const { html: taggedHtml, fragments } = extractFragments(originalHtml, config.translation.maxFragmentTokens);
 
         // Translate fragments (uses cache)
         const { translatedTexts, cacheHits, cacheMisses } = await translateFragments(
@@ -86,8 +86,8 @@ export async function translateProject(
         totalCacheHits += cacheHits;
         totalCacheMisses += cacheMisses;
 
-        // Start with the original HTML
-        let translatedHtml = originalHtml;
+        // Start from the tagged HTML so injectTranslations can locate [data-sl-id] elements
+        let translatedHtml = taggedHtml;
 
         // Inject fragment translations into the HTML
         translatedHtml = injectTranslations(translatedHtml, translatedTexts, fragments);

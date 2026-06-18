@@ -28,8 +28,12 @@ const TRANSLATABLE_ATTRS = ['alt', 'title', 'placeholder', 'aria-label', 'aria-d
 /**
  * Extracts translatable HTML fragments from a page using a greedy-upward strategy.
  * Also extracts translatable attributes (alt, title, placeholder, aria-*).
+ * Returns the modified HTML (with data-sl-id attributes injected) and the fragments array.
  */
-export function extractFragments(html: string, maxFragmentTokens = 2000): HtmlFragment[] {
+export function extractFragments(
+  html: string,
+  maxFragmentTokens = 2000,
+): { html: string; fragments: HtmlFragment[] } {
   const $ = cheerio.load(html);
   const fragments: HtmlFragment[] = [];
   const extractedNodes = new WeakSet<AnyNode>();
@@ -107,7 +111,7 @@ export function extractFragments(html: string, maxFragmentTokens = 2000): HtmlFr
     }
   });
 
-  return fragments;
+  return { html: $.html(), fragments };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
