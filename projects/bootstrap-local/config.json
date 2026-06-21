@@ -1,0 +1,40 @@
+{
+  "name": "Bootstrap Local",
+  "slug": "bootstrap-local",
+  "url": "http://localhost:9001",
+  "targetUrls": {
+    "es": "https"
+  },
+  "siteType": "generic",
+  "crawl": {
+    "delayMs": 1500,
+    "delayJitterMs": 500,
+    "maxPages": 500,
+    "ignorePatterns": [],
+    "normalizeTrailingSlash": true,
+    "stripQueryParams": true
+  },
+  "paths": {
+    "original": "/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/bootstrap-local/original",
+    "raw": "/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/bootstrap-local/raw",
+    "translations": {
+      "es": "/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/bootstrap-local/es"
+    }
+  },
+  "translation": {
+    "provider": "ollama",
+    "ollamaUrl": "http://localhost:11434",
+    "model": "llama3.1",
+    "sourceLanguage": "en",
+    "targetLanguages": [
+      "es"
+    ],
+    "batchSize": 20,
+    "maxFragmentTokens": 2000
+  },
+  "personalization": {
+    "preTranslation": [],
+    "postTranslation": []
+  },
+  "copyAssetsMode": "copy"
+}

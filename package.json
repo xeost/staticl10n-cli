@@ -11,7 +11,9 @@
     "build": "tsc",
     "start": "node dist/cli/index.js",
     "preview:tailwindcss-local:original": "npx wrangler pages dev temp-public-static/tailwindcss-local/original",
-    "preview:tailwindcss-local:es": "npx wrangler pages dev temp-public-static/tailwindcss-local/es --port 8789"
+    "preview:tailwindcss-local:es": "npx wrangler pages dev temp-public-static/tailwindcss-local/es --port 8789",
+    "preview:bootstrap-local:original": "npx wrangler pages dev temp-public-static/bootstrap-local/original --port 9002",
+    "preview:bootstrap-local:es": "npx wrangler pages dev temp-public-static/bootstrap-local/es --port 9003"
   },
   "dependencies": {
     "better-sqlite3": "^12.0.0",
