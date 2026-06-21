@@ -38,6 +38,7 @@ export async function translateProject(
   targetLanguages?: string[],
   targetPageUrl?: string,
   onProgress?: (url: string, lang: string, done: number, total: number) => void,
+  onFragmentProgress?: (done: number, total: number, url: string, lang: string) => void,
 ): Promise<TranslationResult> {
   const project = dbGetProjectBySlug(projectSlug);
   if (!project) throw new Error(`Project "${projectSlug}" not found`);
@@ -82,6 +83,9 @@ export async function translateProject(
           fragments,
           lang,
           config,
+          onFragmentProgress
+            ? (done, total) => onFragmentProgress(done, total, pageRow.url, lang)
+            : undefined,
         );
         totalCacheHits += cacheHits;
         totalCacheMisses += cacheMisses;

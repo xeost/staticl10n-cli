@@ -135,11 +135,20 @@ async function runTestPipeline(
   // ── Stage 2: Translation ──────────────────────────────────────────────────
   if (stages.includes('translate')) {
     const spinner = ora(`[2/4] Translating into: ${languages.join(', ')}...`).start();
+    const pageStart = Date.now();
     try {
-      const result = await translateProject(projectSlug, config, languages, url);
+      const result = await translateProject(
+        projectSlug, config, languages, url,
+        undefined,
+        (done, total, _url, lang) => {
+          const elapsed = ((Date.now() - pageStart) / 1000).toFixed(1);
+          spinner.text = `[2/4] [${lang}] fragment ${done}/${total} · ${elapsed}s elapsed`;
+        },
+      );
+      const totalElapsed = ((Date.now() - pageStart) / 1000).toFixed(1);
       if (result.pagesTranslated > 0) {
         spinner.succeed(
-          `[2/4] Translation done — cache hits: ${result.cacheHits}, misses: ${result.cacheMisses}`,
+          `[2/4] Translation done in ${totalElapsed}s — cache hits: ${result.cacheHits}, misses: ${result.cacheMisses}`,
         );
         results['translate'] = 'ok';
         for (const lang of languages) {

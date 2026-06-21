@@ -23,11 +23,13 @@ export async function translateFragments(
   fragments: HtmlFragment[],
   targetLanguage: string,
   config: ProjectConfig,
+  onFragmentProgress?: (done: number, total: number) => void,
 ): Promise<TranslationBatch> {
   const translatedTexts = new Map<string, string>();
   const toTranslate: HtmlFragment[] = [];
   let cacheHits = 0;
   let cacheMisses = 0;
+  let fragmentsDone = 0;
 
   // Check cache first
   for (const fragment of fragments) {
@@ -35,6 +37,7 @@ export async function translateFragments(
     if (cached !== null) {
       translatedTexts.set(fragment.id, cached);
       cacheHits++;
+      onFragmentProgress?.(++fragmentsDone, fragments.length);
     } else {
       toTranslate.push(fragment);
       cacheMisses++;
@@ -68,6 +71,7 @@ export async function translateFragments(
         // so the fragment is retried on the next run.
         translatedTexts.set(fragment.id, fragment.outerHtml);
       }
+      onFragmentProgress?.(++fragmentsDone, fragments.length);
     }
   }
 

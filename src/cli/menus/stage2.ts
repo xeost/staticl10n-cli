@@ -97,10 +97,13 @@ async function runTranslation(
   const total = pages.length * langs.length;
 
   const bar = new cliProgress.SingleBar(
-    { format: 'Translating | {bar} | {value}/{total} | {url}' },
+    { format: 'Translating | {bar} | {value}/{total} pages | {fragment} | {elapsed}s | {url}' },
     cliProgress.Presets.shades_classic,
   );
-  bar.start(total, 0, { url: '' });
+  bar.start(total, 0, { url: '', fragment: '-', elapsed: '0.0' });
+
+  let barDone = 0;
+  let pageStart = Date.now();
 
   try {
     const result = await translateProject(
@@ -109,7 +112,13 @@ async function runTranslation(
       langs,
       undefined,
       (url, lang, done) => {
-        bar.update(done, { url: `[${lang}] ${url.slice(-50)}` });
+        barDone = done;
+        pageStart = Date.now();
+        bar.update(done, { url: `[${lang}] ${url.slice(-50)}`, fragment: '-', elapsed: '0.0' });
+      },
+      (done, total, _url, _lang) => {
+        const elapsed = ((Date.now() - pageStart) / 1000).toFixed(1);
+        bar.update(barDone, { fragment: `${done}/${total} frags`, elapsed });
       },
     );
     bar.stop();

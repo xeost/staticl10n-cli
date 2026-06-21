@@ -17,14 +17,18 @@ const BLOCK_TAGS = new Set([
   'section', 'article', 'div', 'p', 'li', 'td', 'th',
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'figcaption',
   'header', 'footer', 'main', 'aside', 'nav', 'figure',
+  'a', 'small', 'button',
 ]);
 
 // Tags whose full content should be excluded from translation extraction
 const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'head', 'meta', 'link', 'code', 'pre']);
 
 // Leaf-content tags that are always extracted if they have significant text,
-// bypassing the text-ratio check (which fails when class attributes inflate markup length)
-const ALWAYS_EXTRACT_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'figcaption', 'caption', 'dt', 'label']);
+// bypassing the text-ratio check (which fails when class/href attributes inflate markup length)
+const ALWAYS_EXTRACT_TAGS = new Set([
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'figcaption', 'caption', 'dt', 'label',
+  'a', 'small', 'button',
+]);
 
 // Translatable attribute names
 const TRANSLATABLE_ATTRS = ['alt', 'title', 'placeholder', 'aria-label', 'aria-description'];
@@ -132,10 +136,14 @@ function hasSignificantText(text: string): boolean {
   return /[a-zA-ZÀ-ÿ\u4e00-\u9fa5\u3040-\u30ff]/.test(text);
 }
 
-/** Computes the ratio of text content to total markup length. */
+/** Computes the ratio of text content to total markup length.
+ * Attribute values (href, class, src, etc.) are stripped from the denominator
+ * so long URLs and class strings don't deflate the ratio for text-rich elements.
+ */
 function computeTextRatio(html: string): number {
   const textLength = html.replace(/<[^>]+>/g, '').trim().length;
-  return textLength / Math.max(html.length, 1);
+  const normalizedHtml = html.replace(/="[^"]*"/g, '=""');
+  return textLength / Math.max(normalizedHtml.length, 1);
 }
 
 /** Builds a simple CSS selector path for an element to locate it for attribute rewriting. */
