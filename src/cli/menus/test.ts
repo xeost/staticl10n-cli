@@ -22,10 +22,10 @@ function formatElapsed(ms: number): string {
 }
 
 function formatTokens(n: number): string {
-  if (n === 0) return '0 tk';
-  if (n < 1000) return `${n} tk`;
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k tk`;
-  return `${(n / 1_000_000).toFixed(2)}M tk`;
+  if (n === 0) return '0 tokens';
+  if (n < 1000) return `${n} tokens`;
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k tokens`;
+  return `${(n / 1_000_000).toFixed(2)}M tokens`;
 }
 
 // ─── Single-Page Test Menu ─────────────────────────────────────────────────────
@@ -161,7 +161,7 @@ async function runTestPipeline(
         undefined,
         (done, total, tokens, _url, lang) => {
           totalTokens = tokens;
-          spinner.text = `[2/4] [${model}] [${lang}] ${done}/${total} frags · ${formatElapsed(Date.now() - pageStart)} · ${formatTokens(tokens)}`;
+          spinner.text = `[2/4] [${model}] [${lang}] ${done}/${total} fragments · ${formatElapsed(Date.now() - pageStart)} · ${formatTokens(tokens)}`;
         },
       );
       if (result.pagesTranslated > 0) {

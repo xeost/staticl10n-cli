@@ -26,10 +26,10 @@ function formatElapsed(ms: number): string {
 }
 
 function formatTokens(n: number): string {
-  if (n === 0) return '0 tk';
-  if (n < 1000) return `${n} tk`;
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k tk`;
-  return `${(n / 1_000_000).toFixed(2)}M tk`;
+  if (n === 0) return '0 tokens';
+  if (n < 1000) return `${n} tokens`;
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k tokens`;
+  return `${(n / 1_000_000).toFixed(2)}M tokens`;
 }
 
 // ─── Stage 2 Menu ─────────────────────────────────────────────────────────────
@@ -123,10 +123,12 @@ async function runTranslation(
     { format: `Translating [${model}] | {bar} | {value}/{total} pages | {fragment} | {elapsed} | {tokens} | {url}` },
     cliProgress.Presets.shades_classic,
   );
-  bar.start(total, 0, { url: '', fragment: '-', elapsed: '0.0s', tokens: '0 tk' });
+  bar.start(total, 0, { url: '', fragment: '-', elapsed: '0.0s', tokens: '0 tokens' });
 
   let barDone = 0;
   let pageStart = Date.now();
+  let grandTotalTokens = 0;
+  let currentPagePrevTokens = 0;
 
   try {
     const result = await translateProject(
@@ -137,19 +139,21 @@ async function runTranslation(
       (url, lang, done) => {
         barDone = done;
         pageStart = Date.now();
-        bar.update(done, { url: `[${lang}] ${url.slice(-50)}`, fragment: '-', elapsed: '0.0s', tokens: '0 tk' });
+        currentPagePrevTokens = 0;
+        bar.update(done, { url: `[${lang}] ${url.slice(-50)}`, fragment: '-', elapsed: '0.0s', tokens: formatTokens(grandTotalTokens) });
       },
-      (done, total, tokens, _url, _lang) => {
-        bar.update(barDone, { fragment: `${done}/${total} frags`, elapsed: formatElapsed(Date.now() - pageStart), tokens: formatTokens(tokens) });
+      (done, fragmentTotal, tokens, _url, _lang) => {
+        grandTotalTokens += tokens - currentPagePrevTokens;
+        currentPagePrevTokens = tokens;
+        bar.update(barDone, { fragment: `${done}/${fragmentTotal} fragments`, elapsed: formatElapsed(Date.now() - pageStart), tokens: formatTokens(grandTotalTokens) });
       },
     );
     bar.stop();
     logger.success(
-      `Translation complete: ${result.pagesTranslated} pages translated, ${result.pagesFailed} failed.`,
+      `Translation complete: ${result.pagesTranslated} pages translated, ${result.pagesFailed} failed`,
     );
-    logger.info(
-      `Cache: ${result.cacheHits} hits / ${result.cacheMisses} misses`,
-    );
+    logger.info(`Total tokens consumed: ${formatTokens(grandTotalTokens)} (input + output)`);
+    logger.info(`Cache: ${result.cacheHits} hits / ${result.cacheMisses} misses`);
   } catch (err) {
     bar.stop();
     logger.error(`Translation failed: ${(err as Error).message}`);
