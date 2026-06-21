@@ -31,7 +31,8 @@
     ],
     "batchSize": 20,
     "maxFragmentTokens": 1200,
-    "maxRetries": 5
+    "maxRetries": 5,
+    "cacheExpiry": -1
   },
   "personalization": {
     "preTranslation": [],
