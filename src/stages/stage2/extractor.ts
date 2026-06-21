@@ -22,6 +22,10 @@ const BLOCK_TAGS = new Set([
 // Tags whose full content should be excluded from translation extraction
 const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'head', 'meta', 'link', 'code', 'pre']);
 
+// Leaf-content tags that are always extracted if they have significant text,
+// bypassing the text-ratio check (which fails when class attributes inflate markup length)
+const ALWAYS_EXTRACT_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'figcaption', 'caption', 'dt', 'label']);
+
 // Translatable attribute names
 const TRANSLATABLE_ATTRS = ['alt', 'title', 'placeholder', 'aria-label', 'aria-description'];
 
@@ -66,7 +70,7 @@ export function extractFragments(
       const outer = $.html(el);
       const textRatio = computeTextRatio(outer);
 
-      if (textRatio > 0.6 && hasSignificantText(getTextContent($, el))) {
+      if ((ALWAYS_EXTRACT_TAGS.has(tag) || textRatio > 0.6) && hasSignificantText(getTextContent($, el))) {
         // Assign a unique data-sl-id
         const id = `f${++counter}`;
         $(el).attr('data-sl-id', id);

@@ -13,8 +13,6 @@ export interface TranslationBatch {
   cacheMisses: number;
 }
 
-const MAX_RETRIES = 3;
-
 /**
  * Translates an array of fragments using the Ollama API.
  * Checks the translation cache first; only calls the model for cache misses.
@@ -52,10 +50,11 @@ export async function translateFragments(
     const batch = toTranslate.slice(i, i + batchSize);
     const results = await translateBatch(batch, targetLanguage, config);
 
-    for (const [id, translatedText] of results) {
-      translatedTexts.set(id, translatedText);
-      const fragment = batch.find((f) => f.id === id);
-      if (fragment) {
+    for (const fragment of batch) {
+      const translatedText = results.get(fragment.id);
+      if (translatedText !== undefined) {
+        // Successful translation: store in map and persist to cache
+        translatedTexts.set(fragment.id, translatedText);
         storeCachedTranslation(
           projectId,
           fragment.outerHtml,
@@ -63,6 +62,10 @@ export async function translateFragments(
           translatedText,
           config.translation.model,
         );
+      } else {
+        // Failed translation: use original as in-memory fallback only — do not cache,
+        // so the fragment is retried on the next run.
+        translatedTexts.set(fragment.id, fragment.outerHtml);
       }
     }
   }
@@ -72,7 +75,11 @@ export async function translateFragments(
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
 
-/** Sends a single batch to Ollama and returns a map of fragment id → translated text. */
+/**
+ * Sends a single batch to Ollama and returns a map of fragment id → translated text.
+ * Only includes successfully verified translations — fallbacks are NOT included so
+ * callers can decide whether to cache them.
+ */
 async function translateBatch(
   fragments: HtmlFragment[],
   targetLanguage: string,
@@ -83,7 +90,8 @@ async function translateBatch(
   for (const fragment of fragments) {
     let translated: string | null = null;
 
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const maxRetries = config.translation.maxRetries ?? 5;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         translated = await callOllama(
           fragment.outerHtml,
@@ -98,12 +106,12 @@ async function translateBatch(
         }
 
         logger.warn(
-          `Translation integrity check failed for fragment ${fragment.id} (attempt ${attempt}/${MAX_RETRIES})`,
+          `Translation integrity check failed for fragment ${fragment.id} (attempt ${attempt}/${maxRetries})`,
         );
         translated = null;
       } catch (err) {
         logger.warn(
-          `Ollama request failed for fragment ${fragment.id} (attempt ${attempt}/${MAX_RETRIES}): ${(err as Error).message}`,
+          `Ollama request failed for fragment ${fragment.id} (attempt ${attempt}/${maxRetries}): ${(err as Error).message}`,
         );
         // Exponential backoff
         await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt - 1)));
@@ -113,9 +121,9 @@ async function translateBatch(
     if (translated) {
       results.set(fragment.id, translated);
     } else {
-      // Fallback: keep original text if translation failed
-      logger.warn(`Keeping original for fragment ${fragment.id} after ${MAX_RETRIES} failed attempts.`);
-      results.set(fragment.id, fragment.outerHtml);
+      // Do NOT add to results — caller will use original as fallback without caching it,
+      // so the fragment is retried on the next run instead of being stuck permanently.
+      logger.warn(`Keeping original for fragment ${fragment.id} after ${maxRetries} failed attempts (not cached).`);
     }
   }
 

@@ -51,6 +51,7 @@ export interface ProjectConfig {
     targetLanguages: string[];
     batchSize: number;
     maxFragmentTokens: number;
+    maxRetries?: number;
   };
   personalization: {
     preTranslation: PersonalizationRule[];
@@ -120,6 +121,7 @@ export function buildDefaultConfig(opts: {
       targetLanguages,
       batchSize: 20,
       maxFragmentTokens: 2000,
+      maxRetries: 5,
     },
     personalization: {
       preTranslation: [],

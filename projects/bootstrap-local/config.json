@@ -30,7 +30,8 @@
       "es"
     ],
     "batchSize": 20,
-    "maxFragmentTokens": 2000
+    "maxFragmentTokens": 2000,
+    "maxRetries": 5
   },
   "personalization": {
     "preTranslation": [],
