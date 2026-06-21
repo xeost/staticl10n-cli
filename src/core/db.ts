@@ -223,11 +223,13 @@ export function dbUpdatePageStatus(
   }
 }
 
-export function dbGetPagesByProject(projectId: number, status?: string): PageRow[] {
+export function dbGetPagesByProject(projectId: number, status?: string | string[]): PageRow[] {
   if (status) {
+    const statuses = Array.isArray(status) ? status : [status];
+    const placeholders = statuses.map(() => '?').join(', ');
     return getDb()
-      .prepare(`SELECT * FROM pages WHERE project_id = ? AND status = ?`)
-      .all(projectId, status) as PageRow[];
+      .prepare(`SELECT * FROM pages WHERE project_id = ? AND status IN (${placeholders})`)
+      .all(projectId, ...statuses) as PageRow[];
   }
   return getDb()
     .prepare(`SELECT * FROM pages WHERE project_id = ?`)
@@ -291,13 +293,24 @@ export function dbGetCachedTranslation(
   projectId: number,
   sourceHash: string,
   targetLanguage: string,
+  model: string,
+  maxAgeSeconds?: number,
 ): CacheRow | undefined {
+  if (maxAgeSeconds !== undefined) {
+    return getDb()
+      .prepare(
+        `SELECT source_hash, translated_text, model FROM translation_cache
+         WHERE project_id = ? AND source_hash = ? AND target_language = ? AND model = ?
+           AND created_at > datetime('now', '-' || ? || ' seconds')`,
+      )
+      .get(projectId, sourceHash, targetLanguage, model, maxAgeSeconds) as CacheRow | undefined;
+  }
   return getDb()
     .prepare(
       `SELECT source_hash, translated_text, model FROM translation_cache
-       WHERE project_id = ? AND source_hash = ? AND target_language = ?`,
+       WHERE project_id = ? AND source_hash = ? AND target_language = ? AND model = ?`,
     )
-    .get(projectId, sourceHash, targetLanguage) as CacheRow | undefined;
+    .get(projectId, sourceHash, targetLanguage, model) as CacheRow | undefined;
 }
 
 export function dbInsertCacheEntry(
@@ -321,6 +334,13 @@ export function dbPurgeTranslationCache(projectId: number): number {
   const result = getDb()
     .prepare(`DELETE FROM translation_cache WHERE project_id = ?`)
     .run(projectId);
+  return result.changes;
+}
+
+export function dbPurgeAllTranslationCaches(): number {
+  const result = getDb()
+    .prepare(`DELETE FROM translation_cache`)
+    .run();
   return result.changes;
 }
 

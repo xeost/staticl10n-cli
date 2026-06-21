@@ -23,21 +23,22 @@ export async function translateFragments(
   fragments: HtmlFragment[],
   targetLanguage: string,
   config: ProjectConfig,
-  onFragmentProgress?: (done: number, total: number) => void,
+  onFragmentProgress?: (done: number, total: number, tokens: number) => void,
 ): Promise<TranslationBatch> {
   const translatedTexts = new Map<string, string>();
   const toTranslate: HtmlFragment[] = [];
   let cacheHits = 0;
   let cacheMisses = 0;
   let fragmentsDone = 0;
+  let totalTokens = 0;
 
   // Check cache first
   for (const fragment of fragments) {
-    const cached = getCachedTranslation(projectId, fragment.outerHtml, targetLanguage);
+    const cached = getCachedTranslation(projectId, fragment.outerHtml, targetLanguage, config);
     if (cached !== null) {
       translatedTexts.set(fragment.id, cached);
       cacheHits++;
-      onFragmentProgress?.(++fragmentsDone, fragments.length);
+      onFragmentProgress?.(++fragmentsDone, fragments.length, totalTokens);
     } else {
       toTranslate.push(fragment);
       cacheMisses++;
@@ -52,7 +53,15 @@ export async function translateFragments(
   const batchSize = config.translation.batchSize;
   for (let i = 0; i < toTranslate.length; i += batchSize) {
     const batch = toTranslate.slice(i, i + batchSize);
-    const results = await translateBatch(batch, targetLanguage, config);
+    const results = await translateBatch(
+      batch,
+      targetLanguage,
+      config,
+      (fragTokens) => {
+        totalTokens += fragTokens;
+        onFragmentProgress?.(++fragmentsDone, fragments.length, totalTokens);
+      },
+    );
 
     for (const fragment of batch) {
       const translatedText = results.get(fragment.id);
@@ -71,7 +80,6 @@ export async function translateFragments(
         // so the fragment is retried on the next run.
         translatedTexts.set(fragment.id, fragment.outerHtml);
       }
-      onFragmentProgress?.(++fragmentsDone, fragments.length);
     }
   }
 
@@ -89,22 +97,26 @@ async function translateBatch(
   fragments: HtmlFragment[],
   targetLanguage: string,
   config: ProjectConfig,
+  onFragmentDone?: (tokens: number) => void,
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
 
   for (const fragment of fragments) {
     let translated: string | null = null;
+    let fragmentTokens = 0;
 
     const maxRetries = config.translation.maxRetries ?? 5;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        translated = await callOllama(
+        const { text: callText, tokens: callTokens } = await callOllama(
           fragment.outerHtml,
           config.translation.sourceLanguage,
           targetLanguage,
           config,
           fragment.isAttribute,
         );
+        fragmentTokens += callTokens;
+        translated = callText;
 
         if (translated) {
           if (!fragment.isAttribute) {
@@ -134,7 +146,8 @@ async function translateBatch(
       // HTML-integrity approach exhausted — fall back to translating text nodes individually.
       // This preserves HTML structure by construction so no integrity check is needed.
       logger.warn(`Falling back to text-node strategy for fragment ${fragment.id}.`);
-      const textNodeResult = await translateByTextNodes(fragment, targetLanguage, config);
+      const { html: textNodeResult, tokens: fallbackTokens } = await translateByTextNodes(fragment, targetLanguage, config);
+      fragmentTokens += fallbackTokens;
       if (textNodeResult) {
         results.set(fragment.id, textNodeResult);
       } else {
@@ -144,6 +157,8 @@ async function translateBatch(
       // Attribute fragment: no structural fallback possible, skip caching.
       logger.warn(`Keeping original for attribute fragment ${fragment.id} after ${maxRetries} failed attempts (not cached).`);
     }
+
+    onFragmentDone?.(fragmentTokens);
   }
 
   return results;
@@ -208,7 +223,7 @@ async function translateByTextNodes(
   fragment: HtmlFragment,
   targetLanguage: string,
   config: ProjectConfig,
-): Promise<string | null> {
+): Promise<{ html: string | null; tokens: number }> {
   const $ = cheerio.load(fragment.outerHtml);
   const SKIP_TEXT_TAGS = new Set(['script', 'style', 'code', 'pre', 'noscript']);
 
@@ -234,23 +249,25 @@ async function translateByTextNodes(
   const bodyEl = $('body').get(0) as Element | undefined;
   ((bodyEl?.children ?? []) as AnyNode[]).forEach(collectTextNodes);
 
-  if (tasks.length === 0) return null;
+  if (tasks.length === 0) return { html: null, tokens: 0 };
 
   const maxRetries = config.translation.maxRetries ?? 5;
   let anyTranslated = false;
+  let translateTokens = 0;
 
   for (const task of tasks) {
     let translated: string | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const result = await callOllama(
+        const { text: result, tokens: callTokens } = await callOllama(
           task.trimmed,
           config.translation.sourceLanguage,
           targetLanguage,
           config,
           true, // isAttribute=true → plain-text prompt and plain-text response
         );
+        translateTokens += callTokens;
         if (result && result.trim().length > 0 && !hasPromptLeakage(result)) {
           translated = result.trim();
           break;
@@ -268,10 +285,10 @@ async function translateByTextNodes(
     }
   }
 
-  if (!anyTranslated) return null;
+  if (!anyTranslated) return { html: null, tokens: translateTokens };
 
   const firstEl = $('body').children().first().get(0);
-  return firstEl ? $.html(firstEl) : null;
+  return { html: firstEl ? $.html(firstEl) : null, tokens: translateTokens };
 }
 
 /** Calls the Ollama API to translate a single fragment. */
@@ -281,7 +298,7 @@ async function callOllama(
   targetLang: string,
   config: ProjectConfig,
   isAttribute: boolean,
-): Promise<string> {
+): Promise<{ text: string; tokens: number }> {
   const prompt = isAttribute
     ? buildAttributePrompt(text, sourceLang, targetLang)
     : buildHtmlPrompt(text, sourceLang, targetLang);
@@ -300,8 +317,13 @@ async function callOllama(
     throw new Error(`Ollama returned HTTP ${response.status}`);
   }
 
-  const data = (await response.json()) as { response: string };
-  return cleanResponse(data.response, isAttribute);
+  const data = (await response.json()) as {
+    response: string;
+    prompt_eval_count?: number;
+    eval_count?: number;
+  };
+  const tokens = (data.prompt_eval_count ?? 0) + (data.eval_count ?? 0);
+  return { text: cleanResponse(data.response, isAttribute), tokens };
 }
 
 /** Builds the translation prompt for an HTML fragment. */

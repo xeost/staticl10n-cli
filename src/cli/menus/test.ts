@@ -11,6 +11,23 @@ import { applyPostPersonalization } from '../../stages/stage3/rules.js';
 import { logger } from '../../utils/logger.js';
 import { urlToFilePath } from '../../utils/paths.js';
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m ${s % 60}s`;
+}
+
+function formatTokens(n: number): string {
+  if (n === 0) return '0 tk';
+  if (n < 1000) return `${n} tk`;
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k tk`;
+  return `${(n / 1_000_000).toFixed(2)}M tk`;
+}
+
 // ─── Single-Page Test Menu ─────────────────────────────────────────────────────
 
 export async function testMenu(projectSlug: string, config: ProjectConfig): Promise<void> {
@@ -134,21 +151,22 @@ async function runTestPipeline(
 
   // ── Stage 2: Translation ──────────────────────────────────────────────────
   if (stages.includes('translate')) {
-    const spinner = ora(`[2/4] Translating into: ${languages.join(', ')}...`).start();
+    const model = config.translation.model;
+    let totalTokens = 0;
+    const spinner = ora(`[2/4] [${model}] Translating into: ${languages.join(', ')}...`).start();
     const pageStart = Date.now();
     try {
       const result = await translateProject(
         projectSlug, config, languages, url,
         undefined,
-        (done, total, _url, lang) => {
-          const elapsed = ((Date.now() - pageStart) / 1000).toFixed(1);
-          spinner.text = `[2/4] [${lang}] fragment ${done}/${total} · ${elapsed}s elapsed`;
+        (done, total, tokens, _url, lang) => {
+          totalTokens = tokens;
+          spinner.text = `[2/4] [${model}] [${lang}] ${done}/${total} frags · ${formatElapsed(Date.now() - pageStart)} · ${formatTokens(tokens)}`;
         },
       );
-      const totalElapsed = ((Date.now() - pageStart) / 1000).toFixed(1);
       if (result.pagesTranslated > 0) {
         spinner.succeed(
-          `[2/4] Translation done in ${totalElapsed}s — cache hits: ${result.cacheHits}, misses: ${result.cacheMisses}`,
+          `[2/4] Translation done in ${formatElapsed(Date.now() - pageStart)} · ${formatTokens(totalTokens)} — cache hits: ${result.cacheHits}, misses: ${result.cacheMisses}`,
         );
         results['translate'] = 'ok';
         for (const lang of languages) {

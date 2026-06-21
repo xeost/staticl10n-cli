@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import type { ProjectConfig } from '../../core/config.js';
 import {
   dbGetCachedTranslation,
   dbInsertCacheEntry,
@@ -21,9 +22,14 @@ export function getCachedTranslation(
   projectId: number,
   sourceText: string,
   targetLanguage: string,
+  config: ProjectConfig,
 ): string | null {
+  const expiry = config.translation.cacheExpiry ?? -1;
+  if (expiry === 0) return null; // cache disabled
+
   const hash = hashFragment(sourceText);
-  const row = dbGetCachedTranslation(projectId, hash, targetLanguage);
+  const maxAge = expiry > 0 ? expiry : undefined;
+  const row = dbGetCachedTranslation(projectId, hash, targetLanguage, config.translation.model, maxAge);
   return row?.translated_text ?? null;
 }
 

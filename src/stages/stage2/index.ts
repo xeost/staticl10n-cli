@@ -38,14 +38,14 @@ export async function translateProject(
   targetLanguages?: string[],
   targetPageUrl?: string,
   onProgress?: (url: string, lang: string, done: number, total: number) => void,
-  onFragmentProgress?: (done: number, total: number, url: string, lang: string) => void,
+  onFragmentProgress?: (done: number, total: number, tokens: number, url: string, lang: string) => void,
 ): Promise<TranslationResult> {
   const project = dbGetProjectBySlug(projectSlug);
   if (!project) throw new Error(`Project "${projectSlug}" not found`);
 
   const languages = targetLanguages ?? config.translation.targetLanguages;
 
-  let pages = dbGetPagesByProject(project.id, 'captured');
+  let pages = dbGetPagesByProject(project.id, ['captured', 'personalized']);
   if (targetPageUrl) {
     pages = pages.filter((p) => p.url === targetPageUrl);
   }
@@ -84,7 +84,7 @@ export async function translateProject(
           lang,
           config,
           onFragmentProgress
-            ? (done, total) => onFragmentProgress(done, total, pageRow.url, lang)
+            ? (done, total, tokens) => onFragmentProgress(done, total, tokens, pageRow.url, lang)
             : undefined,
         );
         totalCacheHits += cacheHits;

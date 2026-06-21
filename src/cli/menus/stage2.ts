@@ -8,11 +8,29 @@ import {
   dbGetPagesByProject,
   dbGetProjectBySlug,
   dbGetTranslationsByPage,
+  dbPurgeAllTranslationCaches,
   dbPurgeTranslationCache,
 } from '../../core/db.js';
 import { translateProject } from '../../stages/stage2/index.js';
 import { logger } from '../../utils/logger.js';
 import { clearScreen, printStageHeader } from '../ui.js';
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m ${s % 60}s`;
+}
+
+function formatTokens(n: number): string {
+  if (n === 0) return '0 tk';
+  if (n < 1000) return `${n} tk`;
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k tk`;
+  return `${(n / 1_000_000).toFixed(2)}M tk`;
+}
 
 // ─── Stage 2 Menu ─────────────────────────────────────────────────────────────
 
@@ -31,7 +49,8 @@ export async function stage2Menu(projectSlug: string, config: ProjectConfig): Pr
           { name: 'Translate to a specific language', value: 'translate-lang' },
           { name: 'Re-translate specific page', value: 'retranslate' },
           { name: 'View translation status by language', value: 'status' },
-          { name: 'Purge translation cache', value: 'purge-cache' },
+          { name: 'Purge cache (this project)', value: 'purge-cache-project' },
+          { name: 'Purge cache (all projects)', value: 'purge-cache-all' },
           { name: 'View cache statistics', value: 'cache-stats' },
           { name: chalk.gray('← Back'), value: 'back' },
         ],
@@ -54,8 +73,11 @@ export async function stage2Menu(projectSlug: string, config: ProjectConfig): Pr
       case 'status':
         viewTranslationStatus(projectSlug, config);
         break;
-      case 'purge-cache':
-        await purgeCache(projectSlug);
+      case 'purge-cache-project':
+        await purgeCache(projectSlug, 'project');
+        break;
+      case 'purge-cache-all':
+        await purgeCache(projectSlug, 'all');
         break;
       case 'cache-stats':
         viewCacheStats(projectSlug);
@@ -75,7 +97,7 @@ async function runTranslation(
   pendingOnly = false,
 ): Promise<void> {
   const project = dbGetProjectBySlug(projectSlug)!;
-  let pages = dbGetPagesByProject(project.id, 'captured');
+  let pages = dbGetPagesByProject(project.id, ['captured', 'personalized']);
 
   if (pendingOnly) {
     // Filter to pages that still have pending translations in any language
@@ -96,11 +118,12 @@ async function runTranslation(
   const langs = languages ?? config.translation.targetLanguages;
   const total = pages.length * langs.length;
 
+  const model = config.translation.model;
   const bar = new cliProgress.SingleBar(
-    { format: 'Translating | {bar} | {value}/{total} pages | {fragment} | {elapsed}s | {url}' },
+    { format: `Translating [${model}] | {bar} | {value}/{total} pages | {fragment} | {elapsed} | {tokens} | {url}` },
     cliProgress.Presets.shades_classic,
   );
-  bar.start(total, 0, { url: '', fragment: '-', elapsed: '0.0' });
+  bar.start(total, 0, { url: '', fragment: '-', elapsed: '0.0s', tokens: '0 tk' });
 
   let barDone = 0;
   let pageStart = Date.now();
@@ -114,11 +137,10 @@ async function runTranslation(
       (url, lang, done) => {
         barDone = done;
         pageStart = Date.now();
-        bar.update(done, { url: `[${lang}] ${url.slice(-50)}`, fragment: '-', elapsed: '0.0' });
+        bar.update(done, { url: `[${lang}] ${url.slice(-50)}`, fragment: '-', elapsed: '0.0s', tokens: '0 tk' });
       },
-      (done, total, _url, _lang) => {
-        const elapsed = ((Date.now() - pageStart) / 1000).toFixed(1);
-        bar.update(barDone, { fragment: `${done}/${total} frags`, elapsed });
+      (done, total, tokens, _url, _lang) => {
+        bar.update(barDone, { fragment: `${done}/${total} frags`, elapsed: formatElapsed(Date.now() - pageStart), tokens: formatTokens(tokens) });
       },
     );
     bar.stop();
@@ -148,7 +170,7 @@ async function runTranslateLanguage(projectSlug: string, config: ProjectConfig):
 
 async function runRetranslate(projectSlug: string, config: ProjectConfig): Promise<void> {
   const project = dbGetProjectBySlug(projectSlug)!;
-  const pages = dbGetPagesByProject(project.id, 'captured');
+  const pages = dbGetPagesByProject(project.id, ['captured', 'personalized']);
 
   if (pages.length === 0) {
     logger.info('No captured pages found.');
@@ -198,12 +220,15 @@ function viewTranslationStatus(projectSlug: string, config: ProjectConfig): void
   }
 }
 
-async function purgeCache(projectSlug: string): Promise<void> {
+async function purgeCache(projectSlug: string, scope: 'project' | 'all'): Promise<void> {
+  const isAll = scope === 'all';
   const { confirmed } = await inquirer.prompt([
     {
       type: 'confirm',
       name: 'confirmed',
-      message: 'This will delete all cached translations. Are you sure?',
+      message: isAll
+        ? chalk.red('This will delete ALL cached translations across every project. Are you sure?')
+        : 'This will delete all cached translations for this project. Are you sure?',
       default: false,
     },
   ]);
@@ -213,9 +238,15 @@ async function purgeCache(projectSlug: string): Promise<void> {
     return;
   }
 
-  const project = dbGetProjectBySlug(projectSlug)!;
-  const count = dbPurgeTranslationCache(project.id);
-  logger.success(`Cache purged: ${count} entries removed.`);
+  let count: number;
+  if (isAll) {
+    count = dbPurgeAllTranslationCaches();
+    logger.success(`Cache purged: ${count} entries removed across all projects.`);
+  } else {
+    const project = dbGetProjectBySlug(projectSlug)!;
+    count = dbPurgeTranslationCache(project.id);
+    logger.success(`Cache purged: ${count} entries removed for project "${projectSlug}".`);
+  }
 }
 
 function viewCacheStats(projectSlug: string): void {

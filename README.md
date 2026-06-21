@@ -44,7 +44,7 @@ The result is one independent static directory per language, ready to be deploye
 | **pnpm** | 8 or later | `npm install -g pnpm` |
 | **Playwright browsers** | Chromium | Installed automatically via `pnpm exec playwright install chromium` |
 | **Ollama** | Latest | [https://ollama.com/download](https://ollama.com/download) |
-| **A translation model** | e.g. `llama3.1`, `gemma3` | `ollama pull llama3.1` |
+| **A translation model** | e.g. `gemma4`, `gemma3` | `ollama pull gemma4` |
 
 ### Install Ollama
 
@@ -54,7 +54,7 @@ brew install ollama
 ollama serve          # starts the Ollama server on http://localhost:11434
 
 # Pull a recommended translation model
-ollama pull llama3.1
+ollama pull gemma4
 # or a smaller model for faster translation:
 ollama pull gemma3:4b
 ```
@@ -274,11 +274,13 @@ Each project has a `config.json` with the following structure:
   "translation": {
     "provider": "ollama",
     "ollamaUrl": "http://localhost:11434",
-    "model": "llama3.1",
+    "model": "gemma4",
     "sourceLanguage": "en",
     "targetLanguages": ["es", "fr"],
-    "batchSize": 20,          // fragments per API call
-    "maxFragmentTokens": 2000 // max tokens per HTML fragment
+    "batchSize": 20,           // fragments per Ollama API call
+    "maxFragmentTokens": 2000, // max tokens per HTML fragment before splitting
+    "maxRetries": 5,           // integrity-check retries per fragment (default: 5)
+    "cacheExpiry": -1          // -1 = no expiry | 0 = cache disabled | N = TTL in seconds
   },
 
   "personalization": {
@@ -432,11 +434,11 @@ Results are saved to the database and printed to stdout. Pending changes can the
 
 1. **Fragment extraction** — `cheerio` walks the DOM top-down. Block elements with a text/markup ratio > 60% are extracted as complete HTML fragments. Children of already-extracted elements are skipped to avoid double-translation.
 
-2. **Cache lookup** — each fragment is SHA-256 hashed. Previously translated fragments are served from the local SQLite cache with no API calls.
+2. **Cache lookup** — each fragment is SHA-256 hashed. Entries are matched by hash, target language, **and the configured model name** — switching to a different model automatically bypasses stale cache entries. The optional `cacheExpiry` setting (in seconds) limits how long entries are reused; set it to `0` to disable the cache entirely (default: `-1`, no expiry).
 
 3. **Ollama API call** — uncached fragments are sent to Ollama in batches. The model is instructed to translate visible text while preserving all HTML tags, attributes, class names, IDs and URLs.
 
-4. **Integrity verification** — the translated HTML is parsed and tag counts + significant attributes are compared with the original. Failures trigger up to 3 retries.
+4. **Integrity verification** — the translated HTML is parsed and tag counts + significant attributes are compared with the original. Failures trigger automatic retries (up to `maxRetries`, default 5). If all retries fail, a text-node fallback strategy translates only the visible text while leaving the HTML structure untouched.
 
 5. **Dual injection** — translated HTML is written directly into the output file (for SEO / first paint) AND stored in a per-page `translations.js` dictionary (for Next.js rehydration defense).
 

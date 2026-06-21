@@ -52,6 +52,7 @@ export interface ProjectConfig {
     batchSize: number;
     maxFragmentTokens: number;
     maxRetries?: number;
+    cacheExpiry?: number;
   };
   personalization: {
     preTranslation: PersonalizationRule[];
@@ -116,12 +117,13 @@ export function buildDefaultConfig(opts: {
     translation: {
       provider: 'ollama',
       ollamaUrl: 'http://localhost:11434',
-      model: 'llama3.1',
+      model: 'gemma4',
       sourceLanguage: 'en',
       targetLanguages,
       batchSize: 20,
       maxFragmentTokens: 2000,
       maxRetries: 5,
+      cacheExpiry: -1,
     },
     personalization: {
       preTranslation: [],

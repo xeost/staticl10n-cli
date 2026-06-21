@@ -185,7 +185,7 @@ CREATE TABLE change_detections (
   "translation": {
     "provider": "ollama",
     "ollamaUrl": "http://localhost:11434",
-    "model": "llama3.1",
+    "model": "gemma4",
     "sourceLanguage": "en",
     "targetLanguages": ["es", "fr"],
     "batchSize": 20,
