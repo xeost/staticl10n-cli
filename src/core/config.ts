@@ -55,6 +55,7 @@ export interface ProjectConfig {
     cacheExpiry?: number;
     context?: string;
     preserveTerms?: string[];
+    translateCodeBlocks?: boolean;
   };
   personalization: {
     preTranslation: PersonalizationRule[];
@@ -128,6 +129,7 @@ export function buildDefaultConfig(opts: {
       cacheExpiry: -1,
       context: '',
       preserveTerms: [],
+      translateCodeBlocks: true,
     },
     personalization: {
       preTranslation: [],

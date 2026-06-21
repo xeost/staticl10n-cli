@@ -75,7 +75,11 @@ export async function translateProject(
         }
 
         // Extract translatable fragments (also returns HTML with data-sl-id attributes injected)
-        const { html: taggedHtml, fragments } = extractFragments(originalHtml, config.translation.maxFragmentTokens);
+        const { html: taggedHtml, fragments } = extractFragments(
+          originalHtml,
+          config.translation.maxFragmentTokens,
+          config.translation.translateCodeBlocks ?? true,
+        );
 
         // Translate fragments (uses cache)
         const { translatedTexts, cacheHits, cacheMisses } = await translateFragments(

@@ -114,6 +114,7 @@ async function translateBatch(
           targetLanguage,
           config,
           fragment.isAttribute,
+          fragment.codeLanguage,
         );
         fragmentTokens += callTokens;
         translated = callText;
@@ -298,10 +299,13 @@ async function callOllama(
   targetLang: string,
   config: ProjectConfig,
   isAttribute: boolean,
+  codeLanguage?: string,
 ): Promise<{ text: string; tokens: number }> {
-  const prompt = isAttribute
-    ? buildAttributePrompt(text, sourceLang, targetLang, config)
-    : buildHtmlPrompt(text, sourceLang, targetLang, config);
+  const prompt = codeLanguage
+    ? buildCodePrompt(text, codeLanguage)
+    : isAttribute
+      ? buildAttributePrompt(text, sourceLang, targetLang, config)
+      : buildHtmlPrompt(text, sourceLang, targetLang, config);
 
   const response = await fetch(`${config.translation.ollamaUrl}/api/generate`, {
     method: 'POST',
@@ -342,6 +346,19 @@ Guidelines:
 - Match the style of the original: keep concise text concise, keep explanatory text explanatory.
 - Do NOT translate: HTML tags, attributes, class names, IDs, URLs, code snippets, technical identifiers, or brand/product names.${termsLine}- Keep all whitespace, line breaks, and HTML structure exactly as in the source.
 - Reply with only the translated HTML, nothing else.
+
+<source>
+${html}
+</source>`;
+}
+
+/** Builds the translation prompt for a syntax-highlighted code block. */
+function buildCodePrompt(html: string, lang: string): string {
+  return `The following is a syntax-highlighted ${lang} code sample inside a <pre><code> block.
+Translate ONLY the text inside comment tokens (spans whose class contains "token comment") and string literals inside string tokens (spans whose class contains "token string").
+Do NOT translate: keywords, identifiers, variable names, function names, HTML tags, tag attributes, class names, URLs, or any other code elements.
+Preserve the entire HTML structure, all attributes, whitespace, and line breaks exactly as in the source.
+Reply with only the translated HTML, nothing else.
 
 <source>
 ${html}

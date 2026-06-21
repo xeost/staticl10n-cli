@@ -282,7 +282,8 @@ Each project has a `config.json` with the following structure:
     "maxRetries": 5,           // integrity-check retries per fragment (default: 5)
     "cacheExpiry": -1,         // -1 = no expiry | 0 = cache disabled | N = TTL in seconds
     "context": "Official docs for Bootstrap, a CSS/JS framework",  // injected into prompt
-    "preserveTerms": ["Parcel", "Webpack", "Vite", "Sass"]         // terms never translated
+    "preserveTerms": ["Parcel", "Webpack", "Vite", "Sass"],        // terms never translated
+    "translateCodeBlocks": true  // translate comments/strings inside <pre><code> blocks (default: true)
   },
 
   "personalization": {
@@ -442,9 +443,11 @@ Results are saved to the database and printed to stdout. Pending changes can the
 
 4. **Integrity verification** — the translated HTML is parsed and tag counts + significant attributes are compared with the original. Failures trigger automatic retries (up to `maxRetries`, default 5). If all retries fail, a text-node fallback strategy translates only the visible text while leaving the HTML structure untouched.
 
-5. **Dual injection** — translated HTML is written directly into the output file (for SEO / first paint) AND stored in a per-page `translations.js` dictionary (for Next.js rehydration defense).
+5. **Code block translation** — `<pre><code class="language-*">` blocks are extracted as separate fragments. A specialized prompt instructs the model to translate only comment tokens and string literals while preserving all code syntax and HTML structure. Set `translateCodeBlocks: false` to skip code blocks entirely (useful if the model misbehaves on a specific site).
 
-6. **Meta & SEO** — `<title>`, `<meta name="description">`, Open Graph, Twitter Card, JSON-LD structured data, `<html lang>`, and `hreflang` alternate links are all processed.
+6. **Dual injection** — translated HTML is written directly into the output file (for SEO / first paint) AND stored in a per-page `translations.js` dictionary (for Next.js rehydration defense).
+
+7. **Meta & SEO** — `<title>`, `<meta name="description">`, Open Graph, Twitter Card, JSON-LD structured data, `<html lang>`, and `hreflang` alternate links are all processed.
 
 ---
 

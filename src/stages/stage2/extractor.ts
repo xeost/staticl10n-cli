@@ -10,6 +10,8 @@ export interface HtmlFragment {
   attributeName?: string;
   /** CSS-like selector to locate the element for attribute fragments */
   elementSelector?: string;
+  /** Set for <pre><code class="language-*"> fragments; contains the detected language */
+  codeLanguage?: string;
 }
 
 // Block-level tags that are candidates for extraction
@@ -21,7 +23,7 @@ const BLOCK_TAGS = new Set([
 ]);
 
 // Tags whose full content should be excluded from translation extraction
-const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'head', 'meta', 'link', 'code', 'pre']);
+const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'head', 'meta', 'link', 'code']);
 
 // Leaf-content tags that are always extracted if they have significant text,
 // bypassing the text-ratio check (which fails when class/href attributes inflate markup length)
@@ -41,6 +43,7 @@ const TRANSLATABLE_ATTRS = ['alt', 'title', 'placeholder', 'aria-label', 'aria-d
 export function extractFragments(
   html: string,
   maxFragmentTokens = 2000,
+  translateCodeBlocks = true,
 ): { html: string; fragments: HtmlFragment[] } {
   const $ = cheerio.load(html);
   const fragments: HtmlFragment[] = [];
@@ -69,6 +72,23 @@ export function extractFragments(
 
     // Skip already-extracted ancestors
     if (isExtracted(node)) return;
+
+    // Handle <pre> code blocks specially
+    if (tag === 'pre') {
+      if (!translateCodeBlocks) return;
+      const codeChild = (el.children as AnyNode[]).find(
+        (c): c is Element => c.type === 'tag' && (c as Element).tagName === 'code',
+      );
+      const lang = /\blanguage-(\w+)\b/.exec(codeChild?.attribs?.class ?? '')?.[1];
+      if (!lang) return; // no detected language — skip
+      const outer = $.html(el);
+      if (Math.ceil(outer.length / 4) > maxFragmentTokens) return; // too large — skip
+      const id = `f${++counter}`;
+      $(el).attr('data-sl-id', id);
+      fragments.push({ id, outerHtml: $.html(el), isAttribute: false, codeLanguage: lang });
+      extractedNodes.add(node);
+      return;
+    }
 
     if (BLOCK_TAGS.has(tag)) {
       const outer = $.html(el);
