@@ -39,7 +39,16 @@
   },
   "personalization": {
     "preTranslation": [],
-    "postTranslation": []
+    "postTranslation": [
+      {
+        "type": "replace_text",
+        "selector": "title",
+        "search": "Tailwind CSS",
+        "replace": "Tailwind CSS en Español",
+        "languages": ["es"],
+        "description": "Rename page titles for the Spanish translation"
+      }
+    ]
   },
   "copyAssetsMode": "copy"
 }

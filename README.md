@@ -295,7 +295,7 @@ Each project has a `config.json` with the following structure:
         "description": "Remove Google Analytics"
       }
     ],
-    // Applied in Stage 3, AFTER translation, to ALL language directories
+    // Applied in Stage 3, AFTER translation
     "postTranslation": [
       {
         "type": "inject_html",
@@ -307,7 +307,15 @@ Each project has a `config.json` with the following structure:
         "type": "replace_text",
         "search": "© 2024 Original Company",
         "replace": "© 2024 My Company",
-        "description": "Replace copyright"
+        "description": "Replace copyright (all directories)"
+      },
+      {
+        "type": "replace_text",
+        "selector": "title",
+        "search": "Acme",
+        "replace": "Acme en Español",
+        "languages": ["es"],
+        "description": "Rename page titles in the Spanish output only"
       }
     ]
   },
@@ -318,13 +326,15 @@ Each project has a `config.json` with the following structure:
 
 ### Personalization rule types
 
-| Type | Required fields | Description |
-|---|---|---|
-| `remove_element` | `selector` | Removes all matching elements |
-| `remove_attribute` | `selector`, `attribute` | Removes an attribute from matching elements |
-| `replace_text` | `search`, `replace` | Replaces all occurrences of a text string in the body |
-| `inject_html` | `html`, `position` | Injects HTML at `head_end`, `body_start`, `body_end`, or `after_selector:<css>` |
-| `add_attribute` | `selector`, `attribute`, `replace` | Sets an attribute value on matching elements |
+| Type | Required fields | Optional fields | Description |
+|---|---|---|---|
+| `remove_element` | `selector` | — | Removes all matching elements |
+| `remove_attribute` | `selector`, `attribute` | — | Removes an attribute from matching elements |
+| `replace_text` | `search`, `replace` | `selector` | Replaces all occurrences of a text string. Without `selector`: replaces in the entire body. With `selector`: scoped to matching elements only (e.g. `"title"` targets the `<title>` tag in `<head>`). |
+| `inject_html` | `html`, `position` | — | Injects HTML at `head_end`, `body_start`, `body_end`, or `after_selector:<css>` |
+| `add_attribute` | `selector`, `attribute`, `replace` | — | Sets an attribute value on matching elements |
+
+All `postTranslation` rules also accept an optional `languages` array (e.g. `["es", "fr"]`) to restrict execution to specific language output directories. Omitting it applies the rule to all directories including `original/`.
 
 ---
 
@@ -445,9 +455,11 @@ Results are saved to the database and printed to stdout. Pending changes can the
 
 5. **Code block translation** — `<pre><code class="language-*">` blocks are extracted as separate fragments. A specialized prompt instructs the model to translate only comment tokens and string literals while preserving all code syntax and HTML structure. Set `translateCodeBlocks: false` to skip code blocks entirely (useful if the model misbehaves on a specific site).
 
-6. **Dual injection** — translated HTML is written directly into the output file (for SEO / first paint) AND stored in a per-page `translations.js` dictionary (for Next.js rehydration defense).
+6. **Sitemap generation** — after all pages are translated, a `sitemap.xml` is written to the root of each language's output directory. URLs are computed by appending each page's path to the `targetUrls[lang]` configured for that language (falls back to `url` if not set). Only successfully translated pages are included.
 
-7. **Meta & SEO** — `<title>`, `<meta name="description">`, Open Graph, Twitter Card, JSON-LD structured data, `<html lang>`, and `hreflang` alternate links are all processed.
+7. **Dual injection** — translated HTML is written directly into the output file (for SEO / first paint) AND stored in a per-page `translations.js` dictionary (for Next.js rehydration defense).
+
+8. **Meta & SEO** — `<title>`, `<meta name="description">`, Open Graph, Twitter Card, JSON-LD structured data, `<html lang>`, and `hreflang` alternate links are all processed.
 
 ---
 

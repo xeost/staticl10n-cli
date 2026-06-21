@@ -112,11 +112,22 @@ export function applyRule($: cheerio.CheerioAPI, rule: PersonalizationRule): num
     case 'replace_text': {
       if (!rule.search || rule.replace === undefined) return 0;
       let count = 0;
-      const body = $.html('body') ?? '';
-      const newBody = body.split(rule.search).join(rule.replace);
-      if (newBody !== body) {
-        $('body').html(newBody);
-        count = 1;
+      if (rule.selector) {
+        $(rule.selector).each((_i, el) => {
+          const current = $(el).html() ?? '';
+          const updated = current.split(rule.search!).join(rule.replace!);
+          if (updated !== current) {
+            $(el).html(updated);
+            count++;
+          }
+        });
+      } else {
+        const body = $.html('body') ?? '';
+        const newBody = body.split(rule.search).join(rule.replace);
+        if (newBody !== body) {
+          $('body').html(newBody);
+          count = 1;
+        }
       }
       return count;
     }

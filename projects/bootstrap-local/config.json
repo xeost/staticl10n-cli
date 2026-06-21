@@ -52,7 +52,16 @@
         "selector": "#carbonads"
       }
     ],
-    "postTranslation": []
+    "postTranslation": [
+      {
+        "type": "replace_text",
+        "selector": "title",
+        "search": "Bootstrap",
+        "replace": "Bootstrap en Español",
+        "languages": ["es"],
+        "description": "Rename page titles for the Spanish translation"
+      }
+    ]
   },
   "copyAssetsMode": "copy"
 }

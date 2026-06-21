@@ -67,6 +67,7 @@ export async function applyPostPersonalization(
       let modified = false;
 
       for (const rule of rules) {
+        if (rule.languages && !rule.languages.includes(label)) continue;
         const key = rule.description ?? rule.type;
         const count = applyRule($, rule);
         if (count > 0) {

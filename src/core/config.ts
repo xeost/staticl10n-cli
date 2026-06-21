@@ -21,6 +21,8 @@ export interface PersonalizationRule {
   html?: string;
   position?: 'head_end' | 'body_start' | 'body_end' | `after_selector:${string}`;
   description?: string;
+  /** For post-translation rules: limit to specific language directories (e.g. ["es", "fr"]). Omit to apply to all directories including original. */
+  languages?: string[];
 }
 
 export interface ProjectConfig {

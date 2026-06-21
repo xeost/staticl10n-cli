@@ -16,6 +16,7 @@ import {
   injectTranslations,
 } from './injector.js';
 import { processMeta, rewriteInternalLinks } from './meta.js';
+import { generateSitemap } from './sitemap.js';
 import { translateFragments, translateJsonLdValues } from './translator.js';
 
 // ─── Stage 2 Orchestrator ─────────────────────────────────────────────────────
@@ -56,6 +57,7 @@ export async function translateProject(
   let pagesFailed = 0;
   let totalCacheHits = 0;
   let totalCacheMisses = 0;
+  const translatedPagesByLang = new Map<string, string[]>();
 
   for (const pageRow of pages) {
     const originalHtmlPath = path.join(config.paths.original, pageRow.path);
@@ -162,6 +164,9 @@ export async function translateProject(
         // Update DB translation status
         dbUpsertPageTranslation(pageRow.id, lang, 'translated', pageRow.checksum ?? undefined);
 
+        const langPages = translatedPagesByLang.get(lang) ?? [];
+        langPages.push(pageRow.url);
+        translatedPagesByLang.set(lang, langPages);
         pagesTranslated++;
         done++;
         onProgress?.(pageRow.url, lang, done, total);
@@ -172,6 +177,16 @@ export async function translateProject(
         pagesFailed++;
         done++;
       }
+    }
+  }
+
+  // Generate sitemap.xml for each language
+  for (const lang of languages) {
+    const outputDir = config.paths.translations[lang];
+    const langPages = translatedPagesByLang.get(lang);
+    if (outputDir && langPages && langPages.length > 0) {
+      generateSitemap(outputDir, config.url, config.targetUrls[lang] ?? '', langPages);
+      logger.debug(`Sitemap written: ${outputDir}/sitemap.xml (${langPages.length} URLs)`);
     }
   }
 
