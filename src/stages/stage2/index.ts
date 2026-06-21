@@ -98,7 +98,7 @@ export async function translateProject(
 
         // Create a simple translation function for meta tags
         const translateText = async (text: string): Promise<string> => {
-          const cached = getCachedTranslation(project.id, text, lang);
+          const cached = getCachedTranslation(project.id, text, lang, config);
           if (cached) return cached;
           const singleFragment = [{ id: 'meta_0', outerHtml: text, isAttribute: true }];
           const result = await translateFragments(project.id, singleFragment, lang, config);

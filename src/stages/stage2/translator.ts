@@ -328,7 +328,14 @@ async function callOllama(
 
 /** Builds the translation prompt for an HTML fragment. */
 function buildHtmlPrompt(html: string, sourceLang: string, targetLang: string): string {
-  return `Translate the visible text inside the <source> tags from ${sourceLang} to ${targetLang}. Keep all HTML tags, attributes, class names, IDs, and URLs exactly as-is. Reply with only the translated HTML, nothing else.
+  return `Translate the visible text inside the <source> tags from ${sourceLang} to ${targetLang}.
+
+Guidelines:
+- Tone: professional and friendly. Use the informal/familiar form of address (e.g., "tú" in Spanish, "tu" in French, "du" in German, "tu" in Italian) — never the formal form (e.g., "usted", "vous", "Sie", "Lei").
+- Match the style of the original: keep concise text concise, keep explanatory text explanatory.
+- Do NOT translate: HTML tags, attributes, class names, IDs, URLs, code snippets, technical identifiers, or brand/product names.
+- Keep all whitespace, line breaks, and HTML structure exactly as in the source.
+- Reply with only the translated HTML, nothing else.
 
 <source>
 ${html}
@@ -337,7 +344,7 @@ ${html}
 
 /** Builds the translation prompt for a plain-text attribute value. */
 function buildAttributePrompt(text: string, sourceLang: string, targetLang: string): string {
-  return `Translate the text inside the <source> tags from ${sourceLang} to ${targetLang}. Reply with only the translated text, nothing else.
+  return `Translate the text inside the <source> tags from ${sourceLang} to ${targetLang}. Use a professional and friendly tone with the informal form of address. Do not translate technical terms, URLs, or brand names. Reply with only the translated text, nothing else.
 
 <source>${text}</source>`;
 }
