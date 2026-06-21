@@ -344,6 +344,14 @@ export function dbPurgeAllTranslationCaches(): number {
   return result.changes;
 }
 
+/** Deletes only the code-block cache entries (source_text starts with <pre) for a project. */
+export function dbPurgeCodeBlockTranslationCache(projectId: number): number {
+  const result = getDb()
+    .prepare(`DELETE FROM translation_cache WHERE project_id = ? AND source_text LIKE '<pre%'`)
+    .run(projectId);
+  return result.changes;
+}
+
 export function dbGetCacheStats(projectId: number): { total: number } {
   const row = getDb()
     .prepare(`SELECT COUNT(*) as total FROM translation_cache WHERE project_id = ?`)

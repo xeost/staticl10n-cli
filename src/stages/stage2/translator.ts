@@ -355,10 +355,11 @@ ${html}
 /** Builds the translation prompt for a syntax-highlighted code block. */
 function buildCodePrompt(html: string, lang: string): string {
   return `The following is a syntax-highlighted ${lang} code sample inside a <pre><code> block.
-Translate ONLY the text inside comment tokens (spans whose class contains "token comment") and string literals inside string tokens (spans whose class contains "token string").
-Do NOT translate: keywords, identifiers, variable names, function names, HTML tags, tag attributes, class names, URLs, or any other code elements.
+Translate ONLY the text inside comment tokens (spans whose class contains "token comment").
+Do NOT translate string literals, keywords, identifiers, variable names, function names, property names, CSS values, HTML tags, tag attributes, class names, URLs, or any other code elements.
 Preserve the entire HTML structure, all attributes, whitespace, and line breaks exactly as in the source.
-Reply with only the translated HTML, nothing else.
+If there are no comment tokens, return the HTML unchanged.
+Reply with only the HTML, nothing else.
 
 <source>
 ${html}

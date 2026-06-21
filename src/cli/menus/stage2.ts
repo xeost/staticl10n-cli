@@ -9,6 +9,7 @@ import {
   dbGetProjectBySlug,
   dbGetTranslationsByPage,
   dbPurgeAllTranslationCaches,
+  dbPurgeCodeBlockTranslationCache,
   dbPurgeTranslationCache,
 } from '../../core/db.js';
 import { translateProject } from '../../stages/stage2/index.js';
@@ -51,6 +52,7 @@ export async function stage2Menu(projectSlug: string, config: ProjectConfig): Pr
           { name: 'View translation status by language', value: 'status' },
           { name: 'Purge cache (this project)', value: 'purge-cache-project' },
           { name: 'Purge cache (all projects)', value: 'purge-cache-all' },
+          { name: 'Purge code block cache (this project)', value: 'purge-cache-code' },
           { name: 'View cache statistics', value: 'cache-stats' },
           { name: chalk.gray('← Back'), value: 'back' },
         ],
@@ -78,6 +80,9 @@ export async function stage2Menu(projectSlug: string, config: ProjectConfig): Pr
         break;
       case 'purge-cache-all':
         await purgeCache(projectSlug, 'all');
+        break;
+      case 'purge-cache-code':
+        await purgeCodeBlockCache(projectSlug);
         break;
       case 'cache-stats':
         viewCacheStats(projectSlug);
@@ -251,6 +256,12 @@ async function purgeCache(projectSlug: string, scope: 'project' | 'all'): Promis
     count = dbPurgeTranslationCache(project.id);
     logger.success(`Cache purged: ${count} entries removed for project "${projectSlug}".`);
   }
+}
+
+async function purgeCodeBlockCache(projectSlug: string): Promise<void> {
+  const project = dbGetProjectBySlug(projectSlug)!;
+  const count = dbPurgeCodeBlockTranslationCache(project.id);
+  logger.success(`Code block cache purged: ${count} entries removed for project "${projectSlug}".`);
 }
 
 function viewCacheStats(projectSlug: string): void {
