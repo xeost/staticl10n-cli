@@ -280,7 +280,9 @@ Each project has a `config.json` with the following structure:
     "batchSize": 20,           // fragments per Ollama API call
     "maxFragmentTokens": 2000, // max tokens per HTML fragment before splitting
     "maxRetries": 5,           // integrity-check retries per fragment (default: 5)
-    "cacheExpiry": -1          // -1 = no expiry | 0 = cache disabled | N = TTL in seconds
+    "cacheExpiry": -1,         // -1 = no expiry | 0 = cache disabled | N = TTL in seconds
+    "context": "Official docs for Bootstrap, a CSS/JS framework",  // injected into prompt
+    "preserveTerms": ["Parcel", "Webpack", "Vite", "Sass"]         // terms never translated
   },
 
   "personalization": {

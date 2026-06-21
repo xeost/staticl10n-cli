@@ -53,6 +53,8 @@ export interface ProjectConfig {
     maxFragmentTokens: number;
     maxRetries?: number;
     cacheExpiry?: number;
+    context?: string;
+    preserveTerms?: string[];
   };
   personalization: {
     preTranslation: PersonalizationRule[];
@@ -124,6 +126,8 @@ export function buildDefaultConfig(opts: {
       maxFragmentTokens: 2000,
       maxRetries: 5,
       cacheExpiry: -1,
+      context: '',
+      preserveTerms: [],
     },
     personalization: {
       preTranslation: [],

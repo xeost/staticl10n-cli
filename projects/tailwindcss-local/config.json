@@ -32,7 +32,9 @@
     "batchSize": 20,
     "maxFragmentTokens": 1200,
     "maxRetries": 5,
-    "cacheExpiry": -1
+    "cacheExpiry": -1,
+    "context": "Official documentation website for Tailwind CSS, a utility-first CSS framework.",
+    "preserveTerms": ["Tailwind", "Tailwind CSS", "CSS", "HTML", "JavaScript", "TypeScript", "npm", "Vite", "PostCSS", "Autoprefixer", "PurgeCSS", "JIT", "CDN", "IntelliSense", "VSCode", "Prettier", "ESLint", "Sass", "SCSS", "React", "Vue", "Svelte", "Next.js", "Nuxt", "Laravel", "Rails", "Django"]
   },
   "personalization": {
     "preTranslation": [],

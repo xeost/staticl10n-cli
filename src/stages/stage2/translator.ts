@@ -300,8 +300,8 @@ async function callOllama(
   isAttribute: boolean,
 ): Promise<{ text: string; tokens: number }> {
   const prompt = isAttribute
-    ? buildAttributePrompt(text, sourceLang, targetLang)
-    : buildHtmlPrompt(text, sourceLang, targetLang);
+    ? buildAttributePrompt(text, sourceLang, targetLang, config)
+    : buildHtmlPrompt(text, sourceLang, targetLang, config);
 
   const response = await fetch(`${config.translation.ollamaUrl}/api/generate`, {
     method: 'POST',
@@ -327,14 +327,20 @@ async function callOllama(
 }
 
 /** Builds the translation prompt for an HTML fragment. */
-function buildHtmlPrompt(html: string, sourceLang: string, targetLang: string): string {
-  return `Translate the visible text inside the <source> tags from ${sourceLang} to ${targetLang}.
+function buildHtmlPrompt(html: string, sourceLang: string, targetLang: string, config: ProjectConfig): string {
+  const contextLine = config.translation.context
+    ? `\nContext: ${config.translation.context}\n`
+    : '';
+  const termsLine = config.translation.preserveTerms?.length
+    ? `\n- Never translate these terms (keep them verbatim): ${config.translation.preserveTerms.join(', ')}\n`
+    : '';
 
+  return `Translate the visible text inside the <source> tags from ${sourceLang} to ${targetLang}.
+${contextLine}
 Guidelines:
 - Tone: professional and friendly. Use the informal/familiar form of address (e.g., "tú" in Spanish, "tu" in French, "du" in German, "tu" in Italian) — never the formal form (e.g., "usted", "vous", "Sie", "Lei").
 - Match the style of the original: keep concise text concise, keep explanatory text explanatory.
-- Do NOT translate: HTML tags, attributes, class names, IDs, URLs, code snippets, technical identifiers, or brand/product names.
-- Keep all whitespace, line breaks, and HTML structure exactly as in the source.
+- Do NOT translate: HTML tags, attributes, class names, IDs, URLs, code snippets, technical identifiers, or brand/product names.${termsLine}- Keep all whitespace, line breaks, and HTML structure exactly as in the source.
 - Reply with only the translated HTML, nothing else.
 
 <source>
@@ -343,8 +349,12 @@ ${html}
 }
 
 /** Builds the translation prompt for a plain-text attribute value. */
-function buildAttributePrompt(text: string, sourceLang: string, targetLang: string): string {
-  return `Translate the text inside the <source> tags from ${sourceLang} to ${targetLang}. Use a professional and friendly tone with the informal form of address. Do not translate technical terms, URLs, or brand names. Reply with only the translated text, nothing else.
+function buildAttributePrompt(text: string, sourceLang: string, targetLang: string, config: ProjectConfig): string {
+  const terms = config.translation.preserveTerms?.length
+    ? ` Never translate: ${config.translation.preserveTerms.join(', ')}.`
+    : '';
+
+  return `Translate the text inside the <source> tags from ${sourceLang} to ${targetLang}. Use a professional and friendly tone with the informal form of address. Do not translate technical terms, URLs, or brand names.${terms} Reply with only the translated text, nothing else.
 
 <source>${text}</source>`;
 }

@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import type { AnyNode, Element } from 'domhandler';
+import type { AnyNode, Element, Text } from 'domhandler';
 
 // ─── HTML Fragment Extractor ──────────────────────────────────────────────────
 
@@ -74,7 +74,7 @@ export function extractFragments(
       const outer = $.html(el);
       const textRatio = computeTextRatio(outer);
 
-      if ((ALWAYS_EXTRACT_TAGS.has(tag) || textRatio > 0.6) && hasSignificantText(getTextContent($, el))) {
+      if ((ALWAYS_EXTRACT_TAGS.has(tag) || textRatio > 0.6 || hasDirectSignificantText(el)) && hasSignificantText(getTextContent($, el))) {
         // Assign a unique data-sl-id
         const id = `f${++counter}`;
         $(el).attr('data-sl-id', id);
@@ -123,6 +123,19 @@ export function extractFragments(
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Returns true if the element has at least one direct text-node child with
+ * significant translatable text. This catches elements like
+ * `<li>Code licensed <a>MIT</a>, docs <a>CC BY 3.0</a>.</li>` where the
+ * surrounding text nodes can't be captured any other way.
+ */
+function hasDirectSignificantText(el: Element): boolean {
+  return (el.children as AnyNode[])?.some((child) => {
+    if (child.type !== 'text') return false;
+    return hasSignificantText((child as Text).data ?? '');
+  }) ?? false;
+}
 
 /** Returns plain text content of an element. */
 function getTextContent($: cheerio.CheerioAPI, el: Element): string {
