@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import type { AnyNode, Element, Text } from 'domhandler';
 import type { ProjectConfig } from '../../core/config.js';
 import { logger } from '../../utils/logger.js';
 import type { HtmlFragment } from './extractor.js';
@@ -101,8 +102,13 @@ async function translateBatch(
           fragment.isAttribute,
         );
 
-        if (translated && verifyTranslationIntegrity(fragment.outerHtml, translated, fragment.isAttribute)) {
-          break;
+        if (translated) {
+          if (!fragment.isAttribute) {
+            translated = restoreStructuralAttributes(fragment.outerHtml, translated);
+          }
+          if (verifyTranslationIntegrity(fragment.outerHtml, translated, fragment.isAttribute)) {
+            break;
+          }
         }
 
         logger.warn(
@@ -120,14 +126,148 @@ async function translateBatch(
 
     if (translated) {
       results.set(fragment.id, translated);
+    } else if (!fragment.isAttribute) {
+      // HTML-integrity approach exhausted — fall back to translating text nodes individually.
+      // This preserves HTML structure by construction so no integrity check is needed.
+      logger.warn(`Falling back to text-node strategy for fragment ${fragment.id}.`);
+      const textNodeResult = await translateByTextNodes(fragment, targetLanguage, config);
+      if (textNodeResult) {
+        results.set(fragment.id, textNodeResult);
+      } else {
+        logger.warn(`Keeping original for fragment ${fragment.id} after all strategies failed (not cached).`);
+      }
     } else {
-      // Do NOT add to results — caller will use original as fallback without caching it,
-      // so the fragment is retried on the next run instead of being stuck permanently.
-      logger.warn(`Keeping original for fragment ${fragment.id} after ${maxRetries} failed attempts (not cached).`);
+      // Attribute fragment: no structural fallback possible, skip caching.
+      logger.warn(`Keeping original for attribute fragment ${fragment.id} after ${maxRetries} failed attempts (not cached).`);
     }
   }
 
   return results;
+}
+
+/**
+ * Restores non-translatable attribute values (class, id, href, src) in a translated
+ * HTML fragment by matching elements to their originals via depth-first traversal order.
+ * Called before the integrity check to prevent spurious failures caused by the model
+ * accidentally altering structural attributes.
+ */
+function restoreStructuralAttributes(original: string, translated: string): string {
+  const $orig = cheerio.load(original);
+  const $trans = cheerio.load(translated);
+  const RESTORE_ATTRS = ['class', 'id', 'href', 'src'];
+
+  function collectElements(root: Element): Element[] {
+    const els: Element[] = [];
+    function walk(el: Element): void {
+      els.push(el);
+      for (const child of (el.children ?? []) as AnyNode[]) {
+        if (child.type === 'tag') walk(child as Element);
+      }
+    }
+    for (const child of (root.children ?? []) as AnyNode[]) {
+      if (child.type === 'tag') walk(child as Element);
+    }
+    return els;
+  }
+
+  const origBody = $orig('body').get(0) as Element | undefined;
+  const transBody = $trans('body').get(0) as Element | undefined;
+  if (!origBody || !transBody) return translated;
+
+  const origEls = collectElements(origBody);
+  const transEls = collectElements(transBody);
+
+  const len = Math.min(origEls.length, transEls.length);
+  for (let i = 0; i < len; i++) {
+    const orig = origEls[i];
+    const trans = transEls[i];
+    if (orig.tagName !== trans.tagName) continue;
+    for (const attr of RESTORE_ATTRS) {
+      if (orig.attribs[attr] !== undefined) {
+        trans.attribs[attr] = orig.attribs[attr];
+      } else if (trans.attribs[attr] !== undefined) {
+        delete trans.attribs[attr];
+      }
+    }
+  }
+
+  const firstEl = $trans('body').children().first().get(0);
+  return firstEl ? $trans.html(firstEl) : translated;
+}
+
+/**
+ * Fallback strategy: translates only the visible text nodes inside an HTML fragment,
+ * leaving all tags, attributes, and structure completely untouched.
+ * Returns the modified outer HTML, or null if nothing could be translated.
+ */
+async function translateByTextNodes(
+  fragment: HtmlFragment,
+  targetLanguage: string,
+  config: ProjectConfig,
+): Promise<string | null> {
+  const $ = cheerio.load(fragment.outerHtml);
+  const SKIP_TEXT_TAGS = new Set(['script', 'style', 'code', 'pre', 'noscript']);
+
+  interface TextTask { node: Text; trimmed: string }
+  const tasks: TextTask[] = [];
+
+  function collectTextNodes(node: AnyNode): void {
+    if (node.type === 'text') {
+      const data = (node as Text).data ?? '';
+      const trimmed = data.trim();
+      if (trimmed.length > 1 && /[a-zA-ZÀ-ÿ\u4e00-\u9fa5\u3040-\u30ff]/.test(trimmed)) {
+        tasks.push({ node: node as Text, trimmed });
+      }
+      return;
+    }
+    if (node.type === 'tag') {
+      const el = node as Element;
+      if (SKIP_TEXT_TAGS.has(el.tagName?.toLowerCase() ?? '')) return;
+      ((el.children ?? []) as AnyNode[]).forEach(collectTextNodes);
+    }
+  }
+
+  const bodyEl = $('body').get(0) as Element | undefined;
+  ((bodyEl?.children ?? []) as AnyNode[]).forEach(collectTextNodes);
+
+  if (tasks.length === 0) return null;
+
+  const maxRetries = config.translation.maxRetries ?? 5;
+  let anyTranslated = false;
+
+  for (const task of tasks) {
+    let translated: string | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await callOllama(
+          task.trimmed,
+          config.translation.sourceLanguage,
+          targetLanguage,
+          config,
+          true, // isAttribute=true → plain-text prompt and plain-text response
+        );
+        if (result && result.trim().length > 0 && !hasPromptLeakage(result)) {
+          translated = result.trim();
+          break;
+        }
+      } catch {
+        // silently continue to next attempt
+      }
+    }
+
+    if (translated) {
+      const leading = task.node.data.match(/^(\s*)/)?.[1] ?? '';
+      const trailing = task.node.data.match(/(\s*)$/)?.[1] ?? '';
+      task.node.data = leading + translated + trailing;
+      anyTranslated = true;
+    }
+  }
+
+  if (!anyTranslated) return null;
+
+  const firstEl = $('body').children().first().get(0);
+  return firstEl ? $.html(firstEl) : null;
 }
 
 /** Calls the Ollama API to translate a single fragment. */
