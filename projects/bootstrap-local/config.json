@@ -65,5 +65,6 @@
     ]
   },
   "copyAssetsMode": "copy",
-  "pathRewrite": []
+  "pathRewrite": [],
+  "domainMap": {}
 }

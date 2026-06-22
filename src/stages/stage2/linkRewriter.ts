@@ -37,6 +37,9 @@ function toNormalizedUrl(pathname: string, origin: string, normalizeTrailingSlas
  *
  * Relative links to translated pages are left unchanged (they resolve correctly
  * when served from the translated domain).
+ *
+ * 3. Links to external domains listed in `config.domainMap` are rewritten
+ *    to the mapped (translated) domain, keeping the original path/query/hash.
  */
 export function rewriteLinks(
   html: string,
@@ -55,6 +58,20 @@ export function rewriteLinks(
   const normalizeSlash = config.crawl.normalizeTrailingSlash;
   let modified = false;
 
+  // Pre-compute domain map entries (origin → origin) for cross-project links.
+  // Each domainMap entry maps an external origin to a per-language translated origin;
+  // we resolve only the entry for the current targetLanguage.
+  const domainMapEntries: [string, string][] = [];
+  if (config.domainMap) {
+    for (const [from, langMap] of Object.entries(config.domainMap)) {
+      const to = langMap[targetLanguage];
+      if (!to) continue;
+      try {
+        domainMapEntries.push([new URL(normalizeBaseUrl(from)).origin, new URL(normalizeBaseUrl(to)).origin]);
+      } catch { /* skip malformed entries */ }
+    }
+  }
+
   $('a[href]').each((_, el) => {
     const raw = $(el).attr('href') ?? '';
     if (!raw || /^(#|mailto:|tel:|javascript:|data:)/i.test(raw)) return;
@@ -66,8 +83,17 @@ export function rewriteLinks(
       return;
     }
 
-    // Only process internal links — same origin as the original site
-    if (resolved.origin !== originalOrigin) return;
+    // External links — check domain map for cross-project sibling sites
+    if (resolved.origin !== originalOrigin) {
+      for (const [fromOrigin, toOrigin] of domainMapEntries) {
+        if (resolved.origin === fromOrigin) {
+          $(el).attr('href', toOrigin + resolved.pathname + resolved.search + resolved.hash);
+          modified = true;
+          break;
+        }
+      }
+      return;
+    }
 
     const normalizedOriginalUrl = toNormalizedUrl(resolved.pathname, originalOrigin, normalizeSlash);
 

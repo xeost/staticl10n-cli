@@ -91,6 +91,20 @@ export interface ProjectConfig {
     postTranslation: PersonalizationRule[];
   };
   copyAssetsMode: CopyAssetsMode;
+  /**
+   * Maps external (sibling-project) domains to their translated equivalents,
+   * per target language. Each key is an external origin; each value is a
+   * Record mapping language codes to the translated domain for that language.
+   *
+   * Example — two related Astro translation projects:
+   *   "domainMap": {
+   *     "https://docs.astro.build": {
+   *       "es": "https://astro-docs.esdocu.com",
+   *       "fr": "https://astro-docs.frdocu.com"
+   *     }
+   *   }
+   */
+  domainMap?: Record<string, Record<string, string>>;
 }
 
 const PROJECTS_DIR = path.join(process.cwd(), 'projects');
@@ -167,5 +181,6 @@ export function buildDefaultConfig(opts: {
     },
     copyAssetsMode: 'copy',
     pathRewrite: [],
+    domainMap: {},
   };
 }
