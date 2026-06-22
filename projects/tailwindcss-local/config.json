@@ -42,7 +42,7 @@
     "postTranslation": [
       {
         "type": "replace_text",
-        "selector": "title",
+        "selector": "head > title",
         "search": "Tailwind CSS",
         "replace": "Tailwind CSS en Español",
         "languages": ["es"],

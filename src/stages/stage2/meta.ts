@@ -19,8 +19,8 @@ export async function processMeta(
   // Update <html lang="...">
   $('html').attr('lang', targetLanguage);
 
-  // Translate <title>
-  const titleEl = $('title');
+  // Translate <title> — scope to head only; body may contain SVG <title> accessibility elements
+  const titleEl = $('head > title');
   if (titleEl.length) {
     const original = titleEl.text().trim();
     if (original) {
