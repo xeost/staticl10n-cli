@@ -12,7 +12,8 @@
     "maxPages": 500,
     "ignorePatterns": [],
     "normalizeTrailingSlash": true,
-    "stripQueryParams": true
+    "stripQueryParams": true,
+    "postHydrationDelayMs": 800
   },
   "paths": {
     "original": "/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/bootstrap-local/original",
@@ -63,5 +64,6 @@
       }
     ]
   },
-  "copyAssetsMode": "copy"
+  "copyAssetsMode": "copy",
+  "pathRewrite": []
 }

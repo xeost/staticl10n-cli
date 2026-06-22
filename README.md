@@ -259,7 +259,11 @@ Each project has a `config.json` with the following structure:
     "delayMs": 1500,         // milliseconds between requests
     "delayJitterMs": 500,    // random extra delay to avoid detection
     "maxPages": 500,
+    // Blocklist mode: skip paths that contain any of these strings (default)
     "ignorePatterns": ["/api/", "/admin/"],
+    // Allowlist mode: ONLY crawl paths that contain at least one of these strings
+    // Mutually exclusive with ignorePatterns — use one or the other, not both.
+    // "allowPatterns": ["/en/"],
     "normalizeTrailingSlash": true,
     "stripQueryParams": true
   },
@@ -331,6 +335,45 @@ Each project has a `config.json` with the following structure:
   ]
 }
 ```
+
+### Crawl filter modes
+
+The `crawl` object supports two mutually exclusive URL filter modes. Use **one or the other** — if both are set, `allowPatterns` takes precedence and a warning is logged.
+
+#### `ignorePatterns` — blocklist (default)
+
+Crawl all discovered URLs **except** those whose pathname contains at least one of the listed strings.
+
+```json
+"crawl": {
+  "ignorePatterns": ["/blog/", "/api/", "/fr/", "/de/"]
+}
+```
+
+All paths are visited unless they match a blocked prefix/substring.
+
+#### `allowPatterns` — allowlist
+
+Crawl **only** URLs whose pathname contains at least one of the listed strings. Everything else is silently skipped.
+
+```json
+"crawl": {
+  "allowPatterns": ["/en/"]
+}
+```
+
+Useful when the source site serves multiple language versions under different path prefixes (e.g. `/en/`, `/fr/`, `/de/`) and you only want to translate one of them. Combined with `pathRewrite`, you can strip the language prefix from the translated output:
+
+```json
+"crawl": {
+  "allowPatterns": ["/en/"]
+},
+"pathRewrite": [
+  { "pattern": "^/en/", "replacement": "/" }
+]
+```
+
+This crawls only `/en/…` pages and publishes them at `/…` on the translated site.
 
 ### Path rewriting
 

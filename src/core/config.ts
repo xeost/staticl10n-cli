@@ -52,7 +52,17 @@ export interface ProjectConfig {
     delayMs: number;
     delayJitterMs: number;
     maxPages: number;
+    /**
+     * Blocklist mode: crawl all paths EXCEPT those whose pathname contains one of these strings.
+     * Mutually exclusive with `allowPatterns`.
+     */
     ignorePatterns: string[];
+    /**
+     * Allowlist mode: crawl ONLY paths whose pathname contains at least one of these strings.
+     * Mutually exclusive with `ignorePatterns`.
+     * When set, `ignorePatterns` is ignored (a warning is logged if both are present).
+     */
+    allowPatterns?: string[];
     normalizeTrailingSlash: boolean;
     stripQueryParams: boolean;
     postHydrationDelayMs?: number;
@@ -130,6 +140,7 @@ export function buildDefaultConfig(opts: {
       ignorePatterns: [],
       normalizeTrailingSlash: true,
       stripQueryParams: true,
+      postHydrationDelayMs: 800,
     },
     paths: {
       original: path.join(opts.outputBaseDir, 'original'),
@@ -155,5 +166,6 @@ export function buildDefaultConfig(opts: {
       postTranslation: [],
     },
     copyAssetsMode: 'copy',
+    pathRewrite: [],
   };
 }

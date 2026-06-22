@@ -23,7 +23,7 @@ export interface CrawlResult {
 /**
  * Discovers all internal URLs of a site using Playwright in headless mode.
  * Starts at the project root URL and follows <a href> links recursively.
- * Respects delayMs + jitter between requests, and ignorePatterns from config.
+ * Respects delayMs + jitter between requests, and ignorePatterns / allowPatterns from config.
  */
 export async function crawlSite(
   projectSlug: string,
@@ -33,6 +33,12 @@ export async function crawlSite(
 ): Promise<CrawlResult> {
   const project = dbGetProjectBySlug(projectSlug);
   if (!project) throw new Error(`Project "${projectSlug}" not found`);
+
+  if (config.crawl.allowPatterns?.length && config.crawl.ignorePatterns.length) {
+    logger.warn(
+      'crawl.allowPatterns and crawl.ignorePatterns are both set — allowPatterns takes precedence. Remove ignorePatterns to silence this warning.',
+    );
+  }
 
   const browser = await chromium.launch({
     headless: true,
@@ -71,9 +77,9 @@ export async function crawlSite(
       if (visited.has(url)) continue;
       visited.add(url);
 
-      // Check against ignore patterns
-      if (shouldIgnore(url, config.crawl.ignorePatterns)) {
-        logger.debug(`Ignoring URL: ${url}`);
+      // Check against crawl filter (blocklist or allowlist)
+      if (!isUrlAllowed(url, config.crawl)) {
+        logger.debug(`Skipping URL (filtered): ${url}`);
         continue;
       }
 
@@ -211,7 +217,7 @@ function extractLinks(html: string, pageUrl: string, config: ProjectConfig): str
       const absolute = new URL(href, pageUrl).href;
       if (isInternalUrl(absolute, config.url)) {
         const normalized = normalizeUrl(absolute, config.crawl);
-        if (!isAssetUrl(normalized) && !shouldIgnore(normalized, config.crawl.ignorePatterns)) {
+        if (!isAssetUrl(normalized) && isUrlAllowed(normalized, config.crawl)) {
           links.push(normalized);
         }
       }
@@ -223,8 +229,25 @@ function extractLinks(html: string, pageUrl: string, config: ProjectConfig): str
   return links;
 }
 
-/** Returns true if the URL matches any of the configured ignore patterns. */
-function shouldIgnore(url: string, patterns: string[]): boolean {
+/**
+ * Returns true if the URL is allowed to be crawled according to the configured
+ * filter mode:
+ *
+ * - allowPatterns (allowlist): the pathname must contain at least one pattern.
+ * - ignorePatterns (blocklist): the pathname must not contain any pattern.
+ *
+ * Both options are mutually exclusive; if both are present, allowPatterns wins
+ * and a warning is emitted once (at call time — callers gate on non-empty).
+ */
+function isUrlAllowed(
+  url: string,
+  crawl: ProjectConfig['crawl'],
+): boolean {
   const { pathname } = new URL(url);
-  return patterns.some((pattern) => pathname.includes(pattern));
+
+  if (crawl.allowPatterns?.length) {
+    return crawl.allowPatterns.some((pattern) => pathname.includes(pattern));
+  }
+
+  return !crawl.ignorePatterns.some((pattern) => pathname.includes(pattern));
 }
