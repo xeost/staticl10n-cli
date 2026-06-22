@@ -363,6 +363,7 @@ Guidelines:
 - Tone: professional and friendly. Use the informal/familiar form of address (e.g., "tú" in Spanish, "tu" in French, "du" in German, "tu" in Italian) — never the formal form (e.g., "usted", "vous", "Sie", "Lei").
 - Match the style of the original: keep concise text concise, keep explanatory text explanatory.
 - Do NOT translate: HTML tags, attributes, class names, IDs, URLs, code snippets, technical identifiers, or brand/product names.${termsLine}- Keep all whitespace, line breaks, and HTML structure exactly as in the source.
+- Do NOT include notes, explanations, or comments about your translation. Output ONLY the translated HTML.
 - Reply with only the translated HTML, nothing else.
 
 <source>
@@ -376,7 +377,7 @@ function buildAttributePrompt(text: string, sourceLang: string, targetLang: stri
     ? ` Never translate: ${config.translation.preserveTerms.join(', ')}.`
     : '';
 
-  return `Translate the text inside the <source> tags from ${sourceLang} to ${targetLang}. Use a professional and friendly tone with the informal form of address. Do not translate technical terms, URLs, or brand names.${terms} Reply with only the translated text, nothing else.
+  return `Translate the text inside the <source> tags from ${sourceLang} to ${targetLang}. Use a professional and friendly tone with the informal form of address. Do not translate technical terms, URLs, or brand names.${terms} Do NOT include notes, explanations, or comments. Reply with only the translated text, nothing else.
 
 <source>${text}</source>`;
 }
@@ -401,6 +402,19 @@ function cleanResponse(raw: string, isAttribute: boolean): string {
   if (isAttribute) {
     const instructionLine = /^Translate the text.*?\n/i;
     text = text.replace(instructionLine, '').trim();
+  }
+
+  // Strip model meta-commentary: "(Note: ...)" parenthetical notes anywhere in the text
+  text = text.replace(/\s*\([Nn]ote:[^)]+\)/g, '').trim();
+
+  if (isAttribute) {
+    // For plain-text attributes: strip trailing " Note: ..." or newline-separated notes
+    text = text.replace(/[\s\n]+[Nn]ote:[^\n]*/gs, '').trim();
+  } else {
+    // For HTML fragments: strip notes appended AFTER the last closing HTML tag
+    text = text.replace(/(<\/[^>]+>)\s+[Nn]ote:[\s\S]*$/i, '$1').trim();
+    // Also strip notes that appear after the last text content on a new line
+    text = text.replace(/\n[Nn]ote:[^\n]*/g, '').trim();
   }
 
   return text;
