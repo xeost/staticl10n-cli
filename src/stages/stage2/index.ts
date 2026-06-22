@@ -17,7 +17,7 @@ import {
 } from './injector.js';
 import { processMeta, rewriteInternalLinks } from './meta.js';
 import { generateSitemap } from './sitemap.js';
-import { translateFragments, translateJsonLdValues } from './translator.js';
+import { translateCodeComments, translateFragments, translateJsonLdValues } from './translator.js';
 
 // ─── Stage 2 Orchestrator ─────────────────────────────────────────────────────
 
@@ -80,7 +80,6 @@ export async function translateProject(
         const { html: taggedHtml, fragments } = extractFragments(
           originalHtml,
           config.translation.maxFragmentTokens,
-          config.translation.translateCodeBlocks ?? true,
         );
 
         // Translate fragments (uses cache)
@@ -101,6 +100,15 @@ export async function translateProject(
 
         // Inject fragment translations into the HTML
         translatedHtml = injectTranslations(translatedHtml, translatedTexts, fragments);
+
+        // Translate code comment spans inside <pre><code> blocks
+        if (config.translation.translateCodeBlockComments !== false) {
+          const { html: commentHtml, cacheHits: chHits, cacheMisses: chMisses } =
+            await translateCodeComments(translatedHtml, lang, project.id, config);
+          translatedHtml = commentHtml;
+          totalCacheHits += chHits;
+          totalCacheMisses += chMisses;
+        }
 
         // Create a simple translation function for meta tags
         const translateText = async (text: string): Promise<string> => {

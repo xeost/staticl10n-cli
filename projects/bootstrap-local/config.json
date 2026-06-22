@@ -24,7 +24,7 @@
   "translation": {
     "provider": "ollama",
     "ollamaUrl": "http://localhost:11434",
-    "model": "gemma4",
+    "model": "gemma3:1b",
     "sourceLanguage": "en",
     "targetLanguages": [
       "es"
@@ -35,7 +35,7 @@
     "cacheExpiry": -1,
     "context": "Official documentation website for Bootstrap, a popular open-source HTML/CSS/JS front-end framework.",
     "preserveTerms": ["Bootstrap", "Sass", "Parcel", "Webpack", "Vite", "Popper", "npm", "jsDelivr", "RFS", "Hugo", "jQuery", "Autoprefixer", "PostCSS"],
-    "translateCodeBlocks": true
+    "translateCodeBlockComments": false
   },
   "personalization": {
     "preTranslation": [

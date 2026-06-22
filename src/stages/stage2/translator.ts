@@ -114,7 +114,6 @@ async function translateBatch(
           targetLanguage,
           config,
           fragment.isAttribute,
-          fragment.codeLanguage,
         );
         fragmentTokens += callTokens;
         translated = callText;
@@ -299,13 +298,10 @@ async function callOllama(
   targetLang: string,
   config: ProjectConfig,
   isAttribute: boolean,
-  codeLanguage?: string,
 ): Promise<{ text: string; tokens: number }> {
-  const prompt = codeLanguage
-    ? buildCodePrompt(text, codeLanguage)
-    : isAttribute
-      ? buildAttributePrompt(text, sourceLang, targetLang, config)
-      : buildHtmlPrompt(text, sourceLang, targetLang, config);
+  const prompt = isAttribute
+    ? buildAttributePrompt(text, sourceLang, targetLang, config)
+    : buildHtmlPrompt(text, sourceLang, targetLang, config);
 
   const response = await fetch(`${config.translation.ollamaUrl}/api/generate`, {
     method: 'POST',
@@ -346,20 +342,6 @@ Guidelines:
 - Match the style of the original: keep concise text concise, keep explanatory text explanatory.
 - Do NOT translate: HTML tags, attributes, class names, IDs, URLs, code snippets, technical identifiers, or brand/product names.${termsLine}- Keep all whitespace, line breaks, and HTML structure exactly as in the source.
 - Reply with only the translated HTML, nothing else.
-
-<source>
-${html}
-</source>`;
-}
-
-/** Builds the translation prompt for a syntax-highlighted code block. */
-function buildCodePrompt(html: string, lang: string): string {
-  return `The following is a syntax-highlighted ${lang} code sample inside a <pre><code> block.
-Translate ONLY the text inside comment tokens (spans whose class contains "token comment").
-Do NOT translate string literals, keywords, identifiers, variable names, function names, property names, CSS values, HTML tags, tag attributes, class names, URLs, or any other code elements.
-Preserve the entire HTML structure, all attributes, whitespace, and line breaks exactly as in the source.
-If there are no comment tokens, return the HTML unchanged.
-Reply with only the HTML, nothing else.
 
 <source>
 ${html}
@@ -475,6 +457,152 @@ function extractSignificantAttributes(html: string): Set<string> {
     if (a.src) attrs.add(`src:${a.src}`);
   });
   return attrs;
+}
+
+// ─── Code Comment Translator ─────────────────────────────────────────────────
+
+/** Scans a translated HTML string for Prism comment spans inside code blocks,
+ * translates each contiguous group as plain text, and returns the updated HTML.
+ * Never touches any code element — only spans with class "token comment".
+ */
+export async function translateCodeComments(
+  html: string,
+  targetLanguage: string,
+  projectId: number,
+  config: ProjectConfig,
+): Promise<{ html: string; cacheHits: number; cacheMisses: number }> {
+  const $ = cheerio.load(html);
+
+  interface Group { elements: Element[]; lines: string[] }
+  const groups: Group[] = [];
+
+  $('pre code').each((_i, codeEl) => {
+    let currentEls: Element[] = [];
+    let currentLines: string[] = [];
+
+    const flush = () => {
+      if (currentEls.length > 0) {
+        groups.push({ elements: [...currentEls], lines: [...currentLines] });
+        currentEls = [];
+        currentLines = [];
+      }
+    };
+
+    $(codeEl).contents().each((_j, node) => {
+      if (node.type === 'tag') {
+        const el = node as Element;
+        const cls = el.attribs?.class ?? '';
+        if (el.tagName === 'span' && cls.includes('token') && cls.includes('comment')) {
+          currentEls.push(el);
+          currentLines.push($(el).text());
+          return;
+        }
+      }
+      // Whitespace-only text nodes don't break the group
+      if (node.type === 'text' && /^[\s]*$/.test((node as Text).data ?? '')) return;
+      flush();
+    });
+    flush();
+  });
+
+  let cacheHits = 0;
+  let cacheMisses = 0;
+
+  for (const group of groups) {
+    const sourceText = group.lines.join('\n');
+    if (!sourceText.trim()) continue;
+
+    const cached = getCachedTranslation(projectId, sourceText, targetLanguage, config);
+    let translated: string;
+
+    if (cached !== null) {
+      translated = cached;
+      cacheHits++;
+    } else {
+      try {
+        const result = await callOllamaComment(
+          sourceText,
+          config.translation.sourceLanguage,
+          targetLanguage,
+          config,
+        );
+        translated = result.text;
+        storeCachedTranslation(projectId, sourceText, targetLanguage, translated, config.translation.model);
+      } catch (err) {
+        logger.warn(`Code comment translation failed: ${(err as Error).message}`);
+        translated = sourceText;
+      }
+      cacheMisses++;
+    }
+
+    applyCommentGroup($, group.elements, group.lines, translated);
+  }
+
+  return { html: $.html() ?? html, cacheHits, cacheMisses };
+}
+
+/** Applies translated text back to the original comment spans. */
+function applyCommentGroup(
+  $: cheerio.CheerioAPI,
+  elements: Element[],
+  originalLines: string[],
+  translatedText: string,
+): void {
+  const parts = redistributeLines(translatedText, originalLines.length);
+  for (let i = 0; i < elements.length; i++) {
+    $(elements[i]).text(parts[i] ?? originalLines[i]);
+  }
+}
+
+/** Splits translated text into exactly n parts, one per original span.
+ * Prefers splitting by newlines; falls back to proportional word distribution. */
+function redistributeLines(text: string, n: number): string[] {
+  if (n === 1) return [text];
+  const lines = text.split('\n');
+  if (lines.length === n) return lines;
+  if (lines.length > n) {
+    // More lines than spans: merge excess into last bucket
+    return [...lines.slice(0, n - 1), lines.slice(n - 1).join('\n')];
+  }
+  // Fewer lines than spans: distribute words proportionally
+  const words = text.split(/\s+/).filter(Boolean);
+  const perPart = Math.max(1, Math.ceil(words.length / n));
+  const parts: string[] = [];
+  for (let i = 0; i < n; i++) {
+    parts.push(words.slice(i * perPart, (i + 1) * perPart).join(' '));
+  }
+  while (parts.length < n) parts.push('');
+  return parts;
+}
+
+/** Calls the Ollama API to translate plain-text code comments. */
+async function callOllamaComment(
+  text: string,
+  sourceLang: string,
+  targetLang: string,
+  config: ProjectConfig,
+): Promise<{ text: string; tokens: number }> {
+  const lineCount = text.split('\n').length;
+  const prompt = `Translate the following code comment${lineCount > 1 ? 's' : ''} from ${sourceLang} to ${targetLang}.
+Keep comment markers (// /* */ # <!-- -->) exactly as they appear on each line.
+Keep exactly ${lineCount} line${lineCount > 1 ? 's' : ''} in the output.
+Reply with only the translated comment text, nothing else.
+
+${text}`;
+
+  const response = await fetch(`${config.translation.ollamaUrl}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: config.translation.model, prompt, stream: false }),
+  });
+  if (!response.ok) throw new Error(`Ollama returned HTTP ${response.status}`);
+  const data = (await response.json()) as {
+    response: string;
+    prompt_eval_count?: number;
+    eval_count?: number;
+  };
+  const tokens = (data.prompt_eval_count ?? 0) + (data.eval_count ?? 0);
+  return { text: data.response.trim(), tokens };
 }
 
 /** Translates JSON-LD structured data values. */

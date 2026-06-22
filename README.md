@@ -283,7 +283,7 @@ Each project has a `config.json` with the following structure:
     "cacheExpiry": -1,         // -1 = no expiry | 0 = cache disabled | N = TTL in seconds
     "context": "Official docs for Bootstrap, a CSS/JS framework",  // injected into prompt
     "preserveTerms": ["Parcel", "Webpack", "Vite", "Sass"],        // terms never translated
-    "translateCodeBlocks": true  // translate comments/strings inside <pre><code> blocks (default: true)
+    "translateCodeBlockComments": true  // translate comment spans inside <pre><code> blocks (default: true)
   },
 
   "personalization": {
@@ -453,7 +453,7 @@ Results are saved to the database and printed to stdout. Pending changes can the
 
 4. **Integrity verification** — the translated HTML is parsed and tag counts + significant attributes are compared with the original. Failures trigger automatic retries (up to `maxRetries`, default 5). If all retries fail, a text-node fallback strategy translates only the visible text while leaving the HTML structure untouched.
 
-5. **Code block translation** — `<pre><code class="language-*">` blocks are extracted as separate fragments. A specialized prompt instructs the model to translate only comment tokens and string literals while preserving all code syntax and HTML structure. Set `translateCodeBlocks: false` to skip code blocks entirely (useful if the model misbehaves on a specific site).
+5. **Code comment translation** — after the main fragment pass, each `<pre><code>` block is scanned for Prism `token comment` spans. Contiguous groups (e.g. consecutive `//` comment lines) are joined, sent to the model as plain text, and the translated lines are redistributed back into the original spans. Code, identifiers, strings, and all HTML structure are never touched. Set `translateCodeBlockComments: false` to disable this step.
 
 6. **Sitemap generation** — after all pages are translated, a `sitemap.xml` is written to the root of each language's output directory. URLs are computed by appending each page's path to the `targetUrls[lang]` configured for that language (falls back to `url` if not set). Only successfully translated pages are included.
 
