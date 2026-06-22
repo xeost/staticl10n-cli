@@ -120,8 +120,13 @@ async function createProjectMenu(): Promise<void> {
   const slug = slugify(answers.name);
   const targetUrls: Record<string, string> = {};
   for (const pair of (answers.targetUrlsRaw as string).split(',')) {
-    const [lang, url] = pair.trim().split(':');
-    if (lang && url) targetUrls[lang.trim()] = url.trim();
+    const trimmed = pair.trim();
+    const colonIdx = trimmed.indexOf(':');
+    if (colonIdx > 0) {
+      const lang = trimmed.slice(0, colonIdx).trim();
+      const url = trimmed.slice(colonIdx + 1).trim();
+      if (lang && url) targetUrls[lang] = url;
+    }
   }
 
   try {

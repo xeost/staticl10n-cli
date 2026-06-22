@@ -1,0 +1,51 @@
+{
+  "name": "Astro Docs",
+  "slug": "astro-docs",
+  "url": "https://docs.astro.build",
+  "targetUrls": {
+    "es": "https://astro-docs.esdocu.com"
+  },
+  "siteType": "generic",
+  "crawl": {
+    "delayMs": 1500,
+    "delayJitterMs": 500,
+    "maxPages": 500,
+    "ignorePatterns": [],
+    "normalizeTrailingSlash": true,
+    "stripQueryParams": true,
+    "postHydrationDelayMs": 800
+  },
+  "paths": {
+    "original": "/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/astro-docs/original",
+    "raw": "/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/astro-docs/raw",
+    "translations": {
+      "es": "/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/astro-docs/es"
+    }
+  },
+  "translation": {
+    "provider": "ollama",
+    "ollamaUrl": "http://localhost:11434",
+    "model": [
+      "llama3.1",
+      "gemma4"
+    ],
+    "sourceLanguage": "en",
+    "targetLanguages": [
+      "es"
+    ],
+    "batchSize": 20,
+    "maxFragmentTokens": 2000,
+    "maxRetries": 3,
+    "cacheExpiry": -1,
+    "context": "",
+    "preserveTerms": [],
+    "translateCodeBlockComments": true
+  },
+  "personalization": {
+    "preTranslation": [],
+    "postTranslation": []
+  },
+  "copyAssetsMode": "copy",
+  "pathRewrite": [],
+  "domainMap": {}
+}
