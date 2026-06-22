@@ -46,6 +46,12 @@
     "postTranslation": []
   },
   "copyAssetsMode": "copy",
-  "pathRewrite": [],
-  "domainMap": {}
+  "pathRewrite": [
+    { "pattern": "^/en/", "replacement": "/" }
+  ],
+  "domainMap": {
+    "https://astro.build": {
+      "es": "https://astro.esdocu.com"
+    }
+  }
 }

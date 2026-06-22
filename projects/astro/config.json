@@ -3,7 +3,7 @@
   "slug": "astro",
   "url": "https://astro.build",
   "targetUrls": {
-    "es": "https"
+    "es": "https://astro.esdocu.com"
   },
   "siteType": "generic",
   "crawl": {
@@ -47,5 +47,9 @@
   },
   "copyAssetsMode": "copy",
   "pathRewrite": [],
-  "domainMap": {}
+  "domainMap": {
+    "https://docs.astro.build": {
+      "es": "https://astro-docs.esdocu.com"
+    }
+  }
 }

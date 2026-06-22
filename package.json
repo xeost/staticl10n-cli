@@ -13,7 +13,11 @@
     "preview:tailwindcss-local:original": "npx wrangler pages dev temp-public-static/tailwindcss-local/original",
     "preview:tailwindcss-local:es": "npx wrangler pages dev temp-public-static/tailwindcss-local/es --port 8789",
     "preview:bootstrap-local:original": "npx wrangler pages dev temp-public-static/bootstrap-local/original --port 9002",
-    "preview:bootstrap-local:es": "npx wrangler pages dev temp-public-static/bootstrap-local/es --port 9003"
+    "preview:bootstrap-local:es": "npx wrangler pages dev temp-public-static/bootstrap-local/es --port 9003",
+    "preview:astro:original": "npx wrangler pages dev temp-public-static/astro/original --port 9002",
+    "preview:astro:es": "npx wrangler pages dev temp-public-static/astro/es --port 9003",
+    "preview:astro-docs:original": "npx wrangler pages dev temp-public-static/astro-docs/original --port 9002",
+    "preview:astro-docs:es": "npx wrangler pages dev temp-public-static/astro-docs/es --port 9003"
   },
   "dependencies": {
     "better-sqlite3": "^12.0.0",
