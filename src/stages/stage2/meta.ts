@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import type { ProjectConfig } from '../../core/config.js';
+import { rewritePath } from '../../core/pathRewrite.js';
 
 // ─── Meta Tag Handler ─────────────────────────────────────────────────────────
 
@@ -72,20 +73,23 @@ function injectHreflangLinks(
   $('link[hreflang]').remove();
 
   const pagePath = new URL(pageUrl).pathname;
+  // Path rewrite is applied for target-language URLs (translated output).
+  // The source language and x-default always point to the original site with the original path.
+  const rewrittenPagePath = rewritePath(pagePath, config.pathRewrite);
 
-  // Inject original language link
+  // Inject original language link (original path — no rewrite)
   $('head').append(
     `<link rel="alternate" hreflang="${config.translation.sourceLanguage}" href="${config.url}${pagePath}" />`,
   );
 
-  // Inject a link for each target language
+  // Inject a link for each target language (rewritten path)
   for (const [lang, baseUrl] of Object.entries(config.targetUrls)) {
     $('head').append(
-      `<link rel="alternate" hreflang="${lang}" href="${normalizeBaseUrl(baseUrl)}${pagePath}" />`,
+      `<link rel="alternate" hreflang="${lang}" href="${normalizeBaseUrl(baseUrl)}${rewrittenPagePath}" />`,
     );
   }
 
-  // x-default points to the original domain
+  // x-default points to the original domain (original path — no rewrite)
   $('head').append(
     `<link rel="alternate" hreflang="x-default" href="${config.url}${pagePath}" />`,
   );

@@ -16,7 +16,9 @@ import {
   injectRuntimePatchReferences,
   injectTranslations,
 } from './injector.js';
-import { processMeta, rewriteInternalLinks } from './meta.js';
+import { rewritePath } from '../../core/pathRewrite.js';
+import { rewriteLinks } from './linkRewriter.js';
+import { processMeta } from './meta.js';
 import { generateSitemap } from './sitemap.js';
 import { translateCodeComments, translateFragments, translateJsonLdValues } from './translator.js';
 
@@ -50,6 +52,17 @@ export async function translateProject(
   let pages = dbGetPagesByProject(project.id, ['captured', 'personalized']);
   if (targetPageUrl) {
     pages = pages.filter((p) => p.url === targetPageUrl);
+  }
+
+  // Pre-compute, per language, the set of URLs that are already translated in the DB
+  // plus all pages being processed in this run. Links to URLs in this set keep their
+  // relative form (or are rewritten to the target domain); links outside it are
+  // rewritten to absolute URLs on the original site.
+  const currentRunUrlSet = new Set(pages.map((p) => p.url));
+  const translatedUrlSets = new Map<string, Set<string>>();
+  for (const lang of languages) {
+    const dbTranslated = dbGetTranslatedPageUrls(project.id, lang);
+    translatedUrlSets.set(lang, new Set([...dbTranslated, ...currentRunUrlSet]));
   }
 
   const total = pages.length * languages.length;
@@ -148,24 +161,35 @@ export async function translateProject(
         });
         translatedHtml = $.html();
 
-        // Rewrite internal absolute links to the target language domain
-        translatedHtml = rewriteInternalLinks(translatedHtml, lang, config);
+        // Rewrite links: translated pages keep relative form (or target domain for absolute),
+        // untranslated pages get absolute URLs pointing to the original site.
+        translatedHtml = rewriteLinks(
+          translatedHtml,
+          pageRow.url,
+          lang,
+          config,
+          translatedUrlSets.get(lang) ?? new Set(),
+        );
 
         // Copy or symlink assets to the language directory
         await syncAssets(config.paths.original, outputDir, config.copyAssetsMode);
+
+        // Apply path rewrite rules to determine the output location.
+        // The source is always read from the original (unrewritten) path.
+        const outputPath = rewritePath(pageRow.path, config.pathRewrite);
 
         // For sites that need the runtime patch (e.g. Next.js), generate translations.js
         const needsPatch = config.siteType === 'nextjs';
         if (needsPatch) {
           translatedHtml = injectRuntimePatchReferences(translatedHtml);
           const patchContent = generateRuntimePatch(fragments, translatedTexts);
-          const patchPath = path.join(outputDir, path.dirname(pageRow.path), 'translations.js');
+          const patchPath = path.join(outputDir, path.dirname(outputPath), 'translations.js');
           fs.ensureDirSync(path.dirname(patchPath));
           fs.writeFileSync(patchPath, patchContent, 'utf-8');
         }
 
         // Save translated HTML
-        const outputHtmlPath = path.join(outputDir, pageRow.path);
+        const outputHtmlPath = path.join(outputDir, outputPath);
         fs.ensureDirSync(path.dirname(outputHtmlPath));
         fs.writeFileSync(outputHtmlPath, translatedHtml, 'utf-8');
 
@@ -191,7 +215,7 @@ export async function translateProject(
     if (!outputDir) continue;
     const allTranslatedUrls = dbGetTranslatedPageUrls(project.id, lang);
     if (allTranslatedUrls.length > 0) {
-      generateSitemap(outputDir, config.url, config.targetUrls[lang] ?? '', allTranslatedUrls);
+      generateSitemap(outputDir, config.url, config.targetUrls[lang] ?? '', allTranslatedUrls, config.pathRewrite);
       logger.debug(`Sitemap written: ${outputDir}/sitemap.xml (${allTranslatedUrls.length} URLs)`);
     }
   }

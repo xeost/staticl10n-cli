@@ -32,6 +32,8 @@ The result is one independent static directory per language, ready to be deploye
 - **Redirect detection** — HTTP 3xx redirects are automatically detected during the crawl, saved to a hosting-agnostic `redirects.json`, and a `_redirects` file (Cloudflare Pages / Netlify format) is generated in every output directory.
 - **Personalization engine** — five rule types (`remove_element`, `remove_attribute`, `replace_text`, `inject_html`, `add_attribute`) applied pre- or post-translation.
 - **Cron-friendly monitoring** — `staticl10n check <slug>` runs non-interactively and writes results to a log file.
+- **Untranslated link rewriting** — links to pages not yet translated are automatically rewritten to absolute URLs pointing to the original site, so visitors are never sent to a missing translated page.
+- **Path rewriting** — optional regex rules strip or transform URL path prefixes at output time (files, links, sitemap, hreflang), e.g. `/en/getting-started/` → `/getting-started/`.
 - **Resume-safe** — every operation is saved atomically to SQLite; interrupted runs can be resumed without re-downloading.
 
 ---
@@ -320,9 +322,38 @@ Each project has a `config.json` with the following structure:
     ]
   },
 
-  "copyAssetsMode": "copy"  // "copy" | "symlink"
+  "copyAssetsMode": "copy",  // "copy" | "symlink"
+
+  // Optional: rewrite URL pathnames at output time (output files, links, sitemap, hreflang).
+  // Useful when crawling a language-prefixed version of a site but publishing without the prefix.
+  "pathRewrite": [
+    { "pattern": "^/en/", "replacement": "/" }
+  ]
 }
 ```
+
+### Path rewriting
+
+`pathRewrite` is an optional array of rules applied in order to every URL **pathname** at output time. Each rule is a regex `pattern` + `replacement` pair (standard JavaScript `String.replace` semantics, so capture groups like `$1` work).
+
+Rewrites are applied to:
+
+- **Output file paths** — the translated HTML is written to the rewritten path instead of the original one (e.g. `es/getting-started/index.html` instead of `es/en/getting-started/index.html`).
+- **Internal links** — `<a href>` links to translated pages use the rewritten path. Links to untranslated pages still use the original path on the original site.
+- **Sitemap** — `<loc>` entries use the rewritten path.
+- **hreflang alternate links** — target-language `<link rel="alternate">` tags use the rewritten path. The source-language and `x-default` links keep the original path (they point back to the original site).
+
+**Typical use case — Astro / multi-language docs site:**
+
+Sites like `https://docs.astro.build` serve their canonical English content under `/en/…`. If you only want to crawl and translate the English content but publish it at the root of your translated domain (e.g. `https://astro-es.example.com/getting-started/` instead of `.../en/getting-started/`), add:
+
+```json
+"pathRewrite": [
+  { "pattern": "^/en/", "replacement": "/" }
+]
+```
+
+This leaves non-English source paths (if any are accidentally crawled) untouched since the pattern only matches paths that start with `/en/`.
 
 ### Personalization rule types
 
@@ -455,11 +486,15 @@ Results are saved to the database and printed to stdout. Pending changes can the
 
 5. **Code comment translation** — after the main fragment pass, each `<pre><code>` block is scanned for Prism `token comment` spans. Contiguous groups (e.g. consecutive `//` comment lines) are joined, sent to the model as plain text, and the translated lines are redistributed back into the original spans. Code, identifiers, strings, and all HTML structure are never touched. Set `translateCodeBlockComments: false` to disable this step.
 
-6. **Sitemap generation** — after all pages are translated, a `sitemap.xml` is written to the root of each language's output directory. URLs are computed by appending each page's path to the `targetUrls[lang]` configured for that language (falls back to `url` if not set). Only successfully translated pages are included.
+6. **Link rewriting** — every `<a href>` is inspected and classified:
+   - **Translated page** — relative links are left unchanged; absolute links that pointed to the source site (e.g. `http://localhost/…`) are rewritten to the target language domain.
+   - **Not-yet-translated page** — the link is rewritten to an absolute URL on the original site (`config.url`), so visitors are never directed to a missing translated page. When running *Test: process single page*, all pages that were already translated in previous runs are treated as available and keep their relative links; only truly untranslated pages are redirected to the original.
 
-7. **Dual injection** — translated HTML is written directly into the output file (for SEO / first paint) AND stored in a per-page `translations.js` dictionary (for Next.js rehydration defense).
+7. **Sitemap generation** — after all pages are translated, a `sitemap.xml` is written to the root of each language's output directory. URLs are computed by appending each page's path to the `targetUrls[lang]` configured for that language (falls back to `url` if not set). The sitemap always reflects the **complete set of translated pages** stored in the database — not just those processed in the current run — so partial runs (e.g. single-page tests) still produce a full sitemap.
 
-8. **Meta & SEO** — `<title>`, `<meta name="description">`, Open Graph, Twitter Card, JSON-LD structured data, `<html lang>`, and `hreflang` alternate links are all processed.
+8. **Dual injection** — translated HTML is written directly into the output file (for SEO / first paint) AND stored in a per-page `translations.js` dictionary (for Next.js rehydration defense).
+
+9. **Meta & SEO** — `<title>`, `<meta name="description">`, Open Graph, Twitter Card, JSON-LD structured data, `<html lang>`, and `hreflang` alternate links are all processed.
 
 ---
 

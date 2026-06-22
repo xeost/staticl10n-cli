@@ -1,5 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
+import type { PathRewriteRule } from '../../core/config.js';
+import { rewritePath } from '../../core/pathRewrite.js';
 
 // ─── Sitemap Generator ────────────────────────────────────────────────────────
 
@@ -10,19 +12,22 @@ import path from 'path';
  * e.g. "http://localhost:9001/docs/intro" → "https://es.example.com/docs/intro"
  *
  * If targetBaseUrl is empty, falls back to sourceBaseUrl.
+ * If pathRewriteRules are provided, each pathname is rewritten before being
+ * added to the sitemap (e.g. /en/getting-started/ → /getting-started/).
  */
 export function generateSitemap(
   outputDir: string,
   sourceBaseUrl: string,
   targetBaseUrl: string,
   pageUrls: string[],
+  pathRewriteRules?: PathRewriteRule[],
 ): void {
   const base = (targetBaseUrl || sourceBaseUrl).replace(/\/$/, '');
 
   const locs = pageUrls
     .map((rawUrl) => {
       try {
-        const pathname = new URL(rawUrl).pathname;
+        const pathname = rewritePath(new URL(rawUrl).pathname, pathRewriteRules);
         return escapeXml(`${base}${pathname}`);
       } catch {
         return null;

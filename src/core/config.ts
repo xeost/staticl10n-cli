@@ -25,11 +25,28 @@ export interface PersonalizationRule {
   languages?: string[];
 }
 
+export interface PathRewriteRule {
+  /** A regular-expression pattern matched against the URL pathname (e.g. "^/en/"). */
+  pattern: string;
+  /** Replacement string (supports regex capture groups, e.g. "$1"). */
+  replacement: string;
+}
+
 export interface ProjectConfig {
   name: string;
   slug: string;
   url: string;
   targetUrls: Record<string, string>;
+  /**
+   * Optional list of path rewrite rules applied to URL pathnames at output time.
+   * Rules are applied in order. Useful when crawling a language-prefixed version of a site
+   * (e.g. /en/…) but wanting the translated output to use the prefix-free path (e.g. /…).
+   *
+   * Example:
+   *   { "pattern": "^/en/", "replacement": "/" }
+   *   transforms /en/getting-started/ → /getting-started/
+   */
+  pathRewrite?: PathRewriteRule[];
   siteType: SiteType;
   crawl: {
     delayMs: number;
