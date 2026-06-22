@@ -45,28 +45,28 @@ Cuando solo necesitas incluir CSS o JS compilados de Bootstrap, puedes utilizar 
 Bootstrap utiliza Sass para una arquitectura modular y personalizable. Importa solo las componentes que necesitas, habilita opciones globales como gradientes y sombras, y escribe tu propio CSS con nuestras variables, mapas, funciones y mezclas.
 </p> <p class="d-flex lead fw-normal"> <a href="/docs/5.3/customize/overview/" class="icon-link icon-link-hover fw-semibold" data-sl-id="f47">
 Aprende más sobre la personalización
-<svg class="bi" aria-hidden="true"><use xlink:href="#arrow-right"></use></svg> </a> </p> </section> <section class="row g-md-5 mb-5 pb-md-5"> <div class="col-lg-6"> <h3 data-sl-id="f48">Incluya todos los archivos SCSS de Bootstrap.</h3> <p data-sl-id="f49">Importa un solo archivo de hojas de estilo y listo para aprovechar todas las características de nuestro CSS.</p>  <div class="bd-code-snippet"> <div class="bd-clipboard"> <button type="button" class="btn-clipboard"> <svg class="bi" role="img" aria-label="Copiar"> <use xlink:href="#clipboard"></use> </svg> </button> </div> <div class="highlight"> <pre class="language-scss"><code class="language-scss"><span class="token comment">// Variable overrides first</span>
+<svg class="bi" aria-hidden="true"><use xlink:href="#arrow-right"></use></svg> </a> </p> </section> <section class="row g-md-5 mb-5 pb-md-5"> <div class="col-lg-6"> <h3 data-sl-id="f48">Incluya todos los archivos SCSS de Bootstrap.</h3> <p data-sl-id="f49">Importa un solo archivo de hojas de estilo y listo para aprovechar todas las características de nuestro CSS.</p>  <div class="bd-code-snippet"> <div class="bd-clipboard"> <button type="button" class="btn-clipboard"> <svg class="bi" role="img" aria-label="Copiar"> <use xlink:href="#clipboard"></use> </svg> </button> </div> <div class="highlight"> <pre class="language-scss"><code class="language-scss"><span class="token comment">// Sobreescribir variables primero</span>
 <span class="token property"><span class="token variable">$primary</span></span><span class="token punctuation">:</span> #900<span class="token punctuation">;</span>
 <span class="token property"><span class="token variable">$enable-shadows</span></span><span class="token punctuation">:</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
 <span class="token property"><span class="token variable">$prefix</span></span><span class="token punctuation">:</span> <span class="token string">"mo-"</span><span class="token punctuation">;</span>
 
-<span class="token comment">// Then import Bootstrap</span>
-<span class="token keyword">@import</span> <span class="token string">"../node_modules/bootstrap/scss/bootstrap"</span><span class="token punctuation">;</span></code></pre> </div> </div> <p data-sl-id="f50">Aprende más sobre nuestras <a href="/docs/5.3/customize/options">opciones de Sass globales</a>.</p> </div> <div class="col-lg-6"> <h3 data-sl-id="f51">Incluye solo lo que necesitas</h3> <p data-sl-id="f52">La forma más fácil de personalizar Bootstrap—incluye solo el CSS que necesitas.</p>  <div class="bd-code-snippet"> <div class="bd-clipboard"> <button type="button" class="btn-clipboard"> <svg class="bi" role="img" aria-label="Copiar"> <use xlink:href="#clipboard"></use> </svg> </button> </div> <div class="highlight"> <pre class="language-scss"><code class="language-scss"><span class="token comment">// Functions first</span>
+<span class="token comment">// Entonces importa bootstrap</span>
+<span class="token keyword">@import</span> <span class="token string">"../node_modules/bootstrap/scss/bootstrap"</span><span class="token punctuation">;</span></code></pre> </div> </div> <p data-sl-id="f50">Aprende más sobre nuestras <a href="/docs/5.3/customize/options">opciones de Sass globales</a>.</p> </div> <div class="col-lg-6"> <h3 data-sl-id="f51">Incluye solo lo que necesitas</h3> <p data-sl-id="f52">La forma más fácil de personalizar Bootstrap—incluye solo el CSS que necesitas.</p>  <div class="bd-code-snippet"> <div class="bd-clipboard"> <button type="button" class="btn-clipboard"> <svg class="bi" role="img" aria-label="Copiar"> <use xlink:href="#clipboard"></use> </svg> </button> </div> <div class="highlight"> <pre class="language-scss"><code class="language-scss"><span class="token comment">// Las funciones primero.</span>
 <span class="token keyword">@import</span> <span class="token string">"../node_modules/bootstrap/scss/functions"</span><span class="token punctuation">;</span>
 
-<span class="token comment">// Variable overrides second</span>
+<span class="token comment">// Sobrescribirse de segunda variable.</span>
 <span class="token property"><span class="token variable">$primary</span></span><span class="token punctuation">:</span> #900<span class="token punctuation">;</span>
 <span class="token property"><span class="token variable">$enable-shadows</span></span><span class="token punctuation">:</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
 <span class="token property"><span class="token variable">$prefix</span></span><span class="token punctuation">:</span> <span class="token string">"mo-"</span><span class="token punctuation">;</span>
 
-<span class="token comment">// Required Bootstrap imports</span>
+<span class="token comment">// Importaciones de Bootstrap necesarias</span>
 <span class="token keyword">@import</span> <span class="token string">"../node_modules/bootstrap/scss/variables"</span><span class="token punctuation">;</span>
 <span class="token keyword">@import</span> <span class="token string">"../node_modules/bootstrap/scss/variables-dark"</span><span class="token punctuation">;</span>
 <span class="token keyword">@import</span> <span class="token string">"../node_modules/bootstrap/scss/maps"</span><span class="token punctuation">;</span>
 <span class="token keyword">@import</span> <span class="token string">"../node_modules/bootstrap/scss/mixins"</span><span class="token punctuation">;</span>
 <span class="token keyword">@import</span> <span class="token string">"../node_modules/bootstrap/scss/root"</span><span class="token punctuation">;</span>
 
-<span class="token comment">// Optional components</span>
+<span class="token comment">// Componentes opcionales</span>
 <span class="token keyword">@import</span> <span class="token string">"../node_modules/bootstrap/scss/utilities"</span><span class="token punctuation">;</span>
 <span class="token keyword">@import</span> <span class="token string">"../node_modules/bootstrap/scss/reboot"</span><span class="token punctuation">;</span>
 <span class="token keyword">@import</span> <span class="token string">"../node_modules/bootstrap/scss/containers"</span><span class="token punctuation">;</span>

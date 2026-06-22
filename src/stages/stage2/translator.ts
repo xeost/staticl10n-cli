@@ -483,6 +483,34 @@ function extractSignificantAttributes(html: string): Set<string> {
 
 // ─── Code Comment Translator ─────────────────────────────────────────────────
 
+interface CommentParts { prefix: string; body: string; suffix: string }
+
+/**
+ * Splits a comment line into marker prefix + translatable body + closing suffix.
+ * Handles: // line, # shell, block (slash-star ... star-slash), HTML comments, and star continuations.
+ */
+function splitCommentMarker(line: string): CommentParts {
+  let m: RegExpMatchArray | null;
+
+  // Block comment on one line: /* body */
+  m = line.match(/^(\s*\/\*+\s*)(.*?)(\s*\*+\/\s*)$/s);
+  if (m) return { prefix: m[1], body: m[2].trim(), suffix: m[3] };
+
+  // HTML / template comment: <!-- body -->
+  m = line.match(/^(\s*<!--\s*)(.*?)(\s*-->\s*)$/s);
+  if (m) return { prefix: m[1], body: m[2].trim(), suffix: m[3] };
+
+  // Line comment: // or #
+  m = line.match(/^(\s*(?:\/\/+|#+)\s*)(.*)(\s*)$/);
+  if (m) return { prefix: m[1], body: m[2].trimEnd(), suffix: m[3] };
+
+  // Block-comment continuation line: * body
+  m = line.match(/^(\s*\*\s+)(.*)(\s*)$/);
+  if (m) return { prefix: m[1], body: m[2].trimEnd(), suffix: m[3] };
+
+  return { prefix: '', body: line, suffix: '' };
+}
+
 /** Scans a translated HTML string for Prism comment spans inside code blocks,
  * translates each contiguous group as plain text, and returns the updated HTML.
  * Never touches any code element — only spans with class "token comment".
@@ -531,56 +559,64 @@ export async function translateCodeComments(
   let cacheMisses = 0;
 
   for (const group of groups) {
-    const sourceText = group.lines.join('\n');
-    if (!sourceText.trim()) continue;
+    // Split each original line into marker prefix + translatable body + closing suffix
+    const parts = group.lines.map(splitCommentMarker);
+    const bodies = parts.map(p => p.body);
+    const bodyText = bodies.join('\n');
 
-    const cached = getCachedTranslation(projectId, sourceText, targetLanguage, config);
-    let translated: string = sourceText;
+    // Use the original lines (with markers) as the stable cache key
+    const cacheKey = group.lines.join('\n');
+    if (!cacheKey.trim()) continue;
+
+    const cached = getCachedTranslation(projectId, cacheKey, targetLanguage, config);
+    let translatedBodies: string[] = bodies; // default: keep originals
 
     if (cached !== null) {
-      translated = cached;
+      translatedBodies = redistributeLines(cached, group.lines.length);
       cacheHits++;
     } else {
-      const models = getModels(config);
-      for (const model of models) {
-        try {
-          const result = await callOllamaComment(
-            sourceText,
-            config.translation.sourceLanguage,
-            targetLanguage,
-            config,
-            model,
-          );
-          translated = result.text;
-          storeCachedTranslation(projectId, sourceText, targetLanguage, translated, getPrimaryModel(config));
-          break;
-        } catch (err) {
-          if (models.indexOf(model) < models.length - 1) {
-            logger.warn(`Code comment translation failed with model "${model}", trying next...`);
-          } else {
-            logger.warn(`Code comment translation failed with all models: ${(err as Error).message}`);
+      if (bodyText.trim()) {
+        const models = getModels(config);
+        for (const model of models) {
+          try {
+            const result = await callOllamaComment(
+              bodyText,
+              config.translation.sourceLanguage,
+              targetLanguage,
+              config,
+              model,
+            );
+            translatedBodies = redistributeLines(result.text, group.lines.length);
+            storeCachedTranslation(projectId, cacheKey, targetLanguage, result.text, getPrimaryModel(config));
+            break;
+          } catch (err) {
+            if (models.indexOf(model) < models.length - 1) {
+              logger.warn(`Code comment translation failed with model "${model}", trying next...`);
+            } else {
+              logger.warn(`Code comment translation failed with all models: ${(err as Error).message}`);
+            }
           }
         }
       }
       cacheMisses++;
     }
 
-    applyCommentGroup($, group.elements, group.lines, translated);
+    // Reassemble: original prefix + translated body + original suffix
+    const finalLines = parts.map((p, i) => p.prefix + (translatedBodies[i] ?? p.body) + p.suffix);
+    applyCommentGroup($, group.elements, finalLines);
   }
 
   return { html: $.html() ?? html, cacheHits, cacheMisses };
 }
 
-/** Applies translated text back to the original comment spans. */
+/** Applies the final (reassembled) lines back to the original comment spans. */
 function applyCommentGroup(
   $: cheerio.CheerioAPI,
   elements: Element[],
-  originalLines: string[],
-  translatedText: string,
+  finalLines: string[],
 ): void {
-  const parts = redistributeLines(translatedText, originalLines.length);
   for (let i = 0; i < elements.length; i++) {
-    $(elements[i]).text(parts[i] ?? originalLines[i]);
+    if (finalLines[i] !== undefined) $(elements[i]).text(finalLines[i]);
   }
 }
 
@@ -614,10 +650,9 @@ async function callOllamaComment(
   model: string,
 ): Promise<{ text: string; tokens: number }> {
   const lineCount = text.split('\n').length;
-  const prompt = `Translate the following code comment${lineCount > 1 ? 's' : ''} from ${sourceLang} to ${targetLang}.
-Keep comment markers (// /* */ # <!-- -->) exactly as they appear on each line.
+  const prompt = `Translate the following text from ${sourceLang} to ${targetLang}.
 Keep exactly ${lineCount} line${lineCount > 1 ? 's' : ''} in the output.
-Reply with only the translated comment text, nothing else.
+Reply with only the translated text, nothing else.
 
 ${text}`;
 
