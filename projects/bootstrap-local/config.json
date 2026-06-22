@@ -24,14 +24,14 @@
   "translation": {
     "provider": "ollama",
     "ollamaUrl": "http://localhost:11434",
-    "model": "gemma3:1b",
+    "model": ["llama3.1", "gemma4"],
     "sourceLanguage": "en",
     "targetLanguages": [
       "es"
     ],
     "batchSize": 20,
     "maxFragmentTokens": 2000,
-    "maxRetries": 5,
+    "maxRetries": 3,
     "cacheExpiry": -1,
     "context": "Official documentation website for Bootstrap, a popular open-source HTML/CSS/JS front-end framework.",
     "preserveTerms": ["Bootstrap", "Sass", "Parcel", "Webpack", "Vite", "Popper", "npm", "jsDelivr", "RFS", "Hugo", "jQuery", "Autoprefixer", "PostCSS"],

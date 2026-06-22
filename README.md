@@ -274,12 +274,12 @@ Each project has a `config.json` with the following structure:
   "translation": {
     "provider": "ollama",
     "ollamaUrl": "http://localhost:11434",
-    "model": "gemma4",
+    "model": ["gemma4", "gemma3:8b"],  // array = multi-model fallback (or a single string)
     "sourceLanguage": "en",
     "targetLanguages": ["es", "fr"],
     "batchSize": 20,           // fragments per Ollama API call
     "maxFragmentTokens": 2000, // max tokens per HTML fragment before splitting
-    "maxRetries": 5,           // integrity-check retries per fragment (default: 5)
+    "maxRetries": 5,           // retries per model before moving to the next one (default: 5)
     "cacheExpiry": -1,         // -1 = no expiry | 0 = cache disabled | N = TTL in seconds
     "context": "Official docs for Bootstrap, a CSS/JS framework",  // injected into prompt
     "preserveTerms": ["Parcel", "Webpack", "Vite", "Sass"],        // terms never translated
@@ -451,7 +451,7 @@ Results are saved to the database and printed to stdout. Pending changes can the
 
 3. **Ollama API call** — uncached fragments are sent to Ollama in batches. The model is instructed to translate visible text while preserving all HTML tags, attributes, class names, IDs and URLs.
 
-4. **Integrity verification** — the translated HTML is parsed and tag counts + significant attributes are compared with the original. Failures trigger automatic retries (up to `maxRetries`, default 5). If all retries fail, a text-node fallback strategy translates only the visible text while leaving the HTML structure untouched.
+4. **Integrity verification & multi-model fallback** — the translated HTML is parsed and tag counts + significant attributes are compared with the original. Failures trigger automatic retries up to `maxRetries` (default 5) for the current model. If all retries for that model fail, the next model in the `model` array is tried with a fresh `maxRetries` budget. Once all models are exhausted, a text-node fallback strategy translates only the visible text nodes while leaving the HTML structure untouched. Setting `model` to a plain string is equivalent to a single-element array. All translations are cached under the primary (first) model name, so switching models in the array does not invalidate existing cache entries.
 
 5. **Code comment translation** — after the main fragment pass, each `<pre><code>` block is scanned for Prism `token comment` spans. Contiguous groups (e.g. consecutive `//` comment lines) are joined, sent to the model as plain text, and the translated lines are redistributed back into the original spans. Code, identifiers, strings, and all HTML structure are never touched. Set `translateCodeBlockComments: false` to disable this step.
 

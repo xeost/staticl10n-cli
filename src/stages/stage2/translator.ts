@@ -5,6 +5,20 @@ import { logger } from '../../utils/logger.js';
 import type { HtmlFragment } from './extractor.js';
 import { getCachedTranslation, storeCachedTranslation } from './cache.js';
 
+// ─── Model Helpers ────────────────────────────────────────────────────────────
+
+/** Returns the primary (first) model name. Used as the cache key for all translations. */
+function getPrimaryModel(config: ProjectConfig): string {
+  const m = config.translation.model;
+  return Array.isArray(m) ? m[0] : m;
+}
+
+/** Returns all configured models as an ordered array. */
+function getModels(config: ProjectConfig): string[] {
+  const m = config.translation.model;
+  return Array.isArray(m) ? m : [m];
+}
+
 // ─── Translator ───────────────────────────────────────────────────────────────
 
 export interface TranslationBatch {
@@ -73,7 +87,7 @@ export async function translateFragments(
           fragment.outerHtml,
           targetLanguage,
           translatedText,
-          config.translation.model,
+          getPrimaryModel(config),
         );
       } else {
         // Failed translation: use original as in-memory fallback only — do not cache,
@@ -101,51 +115,58 @@ async function translateBatch(
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
 
+  const models = getModels(config);
+  const maxRetries = config.translation.maxRetries ?? 5;
+
   for (const fragment of fragments) {
     let translated: string | null = null;
     let fragmentTokens = 0;
 
-    const maxRetries = config.translation.maxRetries ?? 5;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const { text: callText, tokens: callTokens } = await callOllama(
-          fragment.outerHtml,
-          config.translation.sourceLanguage,
-          targetLanguage,
-          config,
-          fragment.isAttribute,
-        );
-        fragmentTokens += callTokens;
-        translated = callText;
+    modelLoop:
+    for (const model of models) {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const { text: callText, tokens: callTokens } = await callOllama(
+            fragment.outerHtml,
+            config.translation.sourceLanguage,
+            targetLanguage,
+            config,
+            fragment.isAttribute,
+            model,
+          );
+          fragmentTokens += callTokens;
+          translated = callText;
 
-        if (translated) {
-          if (!fragment.isAttribute) {
-            translated = restoreStructuralAttributes(fragment.outerHtml, translated);
+          if (translated) {
+            if (!fragment.isAttribute) {
+              translated = restoreStructuralAttributes(fragment.outerHtml, translated);
+            }
+            if (verifyTranslationIntegrity(fragment.outerHtml, translated, fragment.isAttribute)) {
+              break modelLoop;
+            }
           }
-          if (verifyTranslationIntegrity(fragment.outerHtml, translated, fragment.isAttribute)) {
-            break;
-          }
+
+          logger.warn(
+            `Integrity check failed for fragment ${fragment.id} (model: ${model}, attempt ${attempt}/${maxRetries})`,
+          );
+          translated = null;
+        } catch (err) {
+          logger.warn(
+            `Ollama request failed for fragment ${fragment.id} (model: ${model}, attempt ${attempt}/${maxRetries}): ${(err as Error).message}`,
+          );
+          await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt - 1)));
         }
-
-        logger.warn(
-          `Translation integrity check failed for fragment ${fragment.id} (attempt ${attempt}/${maxRetries})`,
-        );
-        translated = null;
-      } catch (err) {
-        logger.warn(
-          `Ollama request failed for fragment ${fragment.id} (attempt ${attempt}/${maxRetries}): ${(err as Error).message}`,
-        );
-        // Exponential backoff
-        await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt - 1)));
+      }
+      if (translated === null && models.indexOf(model) < models.length - 1) {
+        logger.warn(`Model "${model}" exhausted for fragment ${fragment.id}, trying next model...`);
       }
     }
 
     if (translated) {
       results.set(fragment.id, translated);
     } else if (!fragment.isAttribute) {
-      // HTML-integrity approach exhausted — fall back to translating text nodes individually.
-      // This preserves HTML structure by construction so no integrity check is needed.
-      logger.warn(`Falling back to text-node strategy for fragment ${fragment.id}.`);
+      // All models exhausted — fall back to translating text nodes individually.
+      logger.warn(`All models exhausted for fragment ${fragment.id}. Falling back to text-node strategy.`);
       const { html: textNodeResult, tokens: fallbackTokens } = await translateByTextNodes(fragment, targetLanguage, config);
       fragmentTokens += fallbackTokens;
       if (textNodeResult) {
@@ -154,8 +175,7 @@ async function translateBatch(
         logger.warn(`Keeping original for fragment ${fragment.id} after all strategies failed (not cached).`);
       }
     } else {
-      // Attribute fragment: no structural fallback possible, skip caching.
-      logger.warn(`Keeping original for attribute fragment ${fragment.id} after ${maxRetries} failed attempts (not cached).`);
+      logger.warn(`Keeping original for attribute fragment ${fragment.id} after all models failed (not cached).`);
     }
 
     onFragmentDone?.(fragmentTokens);
@@ -266,6 +286,7 @@ async function translateByTextNodes(
           targetLanguage,
           config,
           true, // isAttribute=true → plain-text prompt and plain-text response
+          getPrimaryModel(config),
         );
         translateTokens += callTokens;
         if (result && result.trim().length > 0 && !hasPromptLeakage(result)) {
@@ -298,6 +319,7 @@ async function callOllama(
   targetLang: string,
   config: ProjectConfig,
   isAttribute: boolean,
+  model: string,
 ): Promise<{ text: string; tokens: number }> {
   const prompt = isAttribute
     ? buildAttributePrompt(text, sourceLang, targetLang, config)
@@ -307,7 +329,7 @@ async function callOllama(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: config.translation.model,
+      model,
       prompt,
       stream: false,
     }),
@@ -513,24 +535,32 @@ export async function translateCodeComments(
     if (!sourceText.trim()) continue;
 
     const cached = getCachedTranslation(projectId, sourceText, targetLanguage, config);
-    let translated: string;
+    let translated: string = sourceText;
 
     if (cached !== null) {
       translated = cached;
       cacheHits++;
     } else {
-      try {
-        const result = await callOllamaComment(
-          sourceText,
-          config.translation.sourceLanguage,
-          targetLanguage,
-          config,
-        );
-        translated = result.text;
-        storeCachedTranslation(projectId, sourceText, targetLanguage, translated, config.translation.model);
-      } catch (err) {
-        logger.warn(`Code comment translation failed: ${(err as Error).message}`);
-        translated = sourceText;
+      const models = getModels(config);
+      for (const model of models) {
+        try {
+          const result = await callOllamaComment(
+            sourceText,
+            config.translation.sourceLanguage,
+            targetLanguage,
+            config,
+            model,
+          );
+          translated = result.text;
+          storeCachedTranslation(projectId, sourceText, targetLanguage, translated, getPrimaryModel(config));
+          break;
+        } catch (err) {
+          if (models.indexOf(model) < models.length - 1) {
+            logger.warn(`Code comment translation failed with model "${model}", trying next...`);
+          } else {
+            logger.warn(`Code comment translation failed with all models: ${(err as Error).message}`);
+          }
+        }
       }
       cacheMisses++;
     }
@@ -581,6 +611,7 @@ async function callOllamaComment(
   sourceLang: string,
   targetLang: string,
   config: ProjectConfig,
+  model: string,
 ): Promise<{ text: string; tokens: number }> {
   const lineCount = text.split('\n').length;
   const prompt = `Translate the following code comment${lineCount > 1 ? 's' : ''} from ${sourceLang} to ${targetLang}.
@@ -593,7 +624,7 @@ ${text}`;
   const response = await fetch(`${config.translation.ollamaUrl}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: config.translation.model, prompt, stream: false }),
+    body: JSON.stringify({ model, prompt, stream: false }),
   });
   if (!response.ok) throw new Error(`Ollama returned HTTP ${response.status}`);
   const data = (await response.json()) as {

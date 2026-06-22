@@ -48,7 +48,7 @@ export interface ProjectConfig {
   translation: {
     provider: 'ollama';
     ollamaUrl: string;
-    model: string;
+    model: string | string[];
     sourceLanguage: string;
     targetLanguages: string[];
     batchSize: number;
@@ -122,12 +122,12 @@ export function buildDefaultConfig(opts: {
     translation: {
       provider: 'ollama',
       ollamaUrl: 'http://localhost:11434',
-      model: 'gemma4',
+      model: ['llama3.1', 'gemma4'],
       sourceLanguage: 'en',
       targetLanguages,
       batchSize: 20,
       maxFragmentTokens: 2000,
-      maxRetries: 5,
+      maxRetries: 3,
       cacheExpiry: -1,
       context: '',
       preserveTerms: [],

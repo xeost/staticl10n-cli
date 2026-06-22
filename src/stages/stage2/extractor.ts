@@ -17,7 +17,7 @@ const BLOCK_TAGS = new Set([
   'section', 'article', 'div', 'p', 'li', 'td', 'th',
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'figcaption',
   'header', 'footer', 'main', 'aside', 'nav', 'figure',
-  'a', 'small', 'button',
+  'a', 'small', 'button', 'span',
 ]);
 
 // Tags whose full content should be excluded from translation extraction
@@ -27,7 +27,7 @@ const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'head', 'meta', 'link'
 // bypassing the text-ratio check (which fails when class/href attributes inflate markup length)
 const ALWAYS_EXTRACT_TAGS = new Set([
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'figcaption', 'caption', 'dt', 'label',
-  'a', 'small', 'button',
+  'a', 'small', 'button', 'span',
 ]);
 
 // Translatable attribute names

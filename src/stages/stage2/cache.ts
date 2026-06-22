@@ -29,7 +29,10 @@ export function getCachedTranslation(
 
   const hash = hashFragment(sourceText);
   const maxAge = expiry > 0 ? expiry : undefined;
-  const row = dbGetCachedTranslation(projectId, hash, targetLanguage, config.translation.model, maxAge);
+  const model = Array.isArray(config.translation.model)
+    ? config.translation.model[0]
+    : config.translation.model;
+  const row = dbGetCachedTranslation(projectId, hash, targetLanguage, model, maxAge);
   return row?.translated_text ?? null;
 }
 
