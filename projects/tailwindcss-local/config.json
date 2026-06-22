@@ -3,7 +3,7 @@
   "slug": "tailwindcss-local",
   "url": "http://localhost:3002",
   "targetUrls": {
-    "es": "tailwindcss.esdocu.com"
+    "es": "https://tailwindcss.esdocu.com"
   },
   "siteType": "nextjs",
   "crawl": {
@@ -24,7 +24,7 @@
   "translation": {
     "provider": "ollama",
     "ollamaUrl": "http://localhost:11434",
-    "model": "gemma4",
+    "model": ["llama3.1", "gemma4"],
     "sourceLanguage": "en",
     "targetLanguages": [
       "es"
