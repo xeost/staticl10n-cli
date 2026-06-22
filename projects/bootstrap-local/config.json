@@ -3,7 +3,7 @@
   "slug": "bootstrap-local",
   "url": "http://localhost:9001",
   "targetUrls": {
-    "es": "https"
+    "es": "https://getbootstrap.esdocu.com"
   },
   "siteType": "generic",
   "crawl": {

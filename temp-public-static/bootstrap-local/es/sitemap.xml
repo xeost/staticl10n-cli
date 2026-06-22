@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https/docs/5.3/getting-started/introduction</loc>
+    <loc>https://getbootstrap.esdocu.com/</loc>
+  </url>
+  <url>
+    <loc>https://getbootstrap.esdocu.com/docs/5.3/getting-started/introduction</loc>
   </url>
 </urlset>

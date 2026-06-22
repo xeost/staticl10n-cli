@@ -5,6 +5,7 @@ import type { ProjectConfig } from '../../core/config.js';
 import {
   dbGetPagesByProject,
   dbGetProjectBySlug,
+  dbGetTranslatedPageUrls,
   dbUpsertPageTranslation,
 } from '../../core/db.js';
 import { logger } from '../../utils/logger.js';
@@ -57,7 +58,6 @@ export async function translateProject(
   let pagesFailed = 0;
   let totalCacheHits = 0;
   let totalCacheMisses = 0;
-  const translatedPagesByLang = new Map<string, string[]>();
 
   for (const pageRow of pages) {
     const originalHtmlPath = path.join(config.paths.original, pageRow.path);
@@ -172,9 +172,6 @@ export async function translateProject(
         // Update DB translation status
         dbUpsertPageTranslation(pageRow.id, lang, 'translated', pageRow.checksum ?? undefined);
 
-        const langPages = translatedPagesByLang.get(lang) ?? [];
-        langPages.push(pageRow.url);
-        translatedPagesByLang.set(lang, langPages);
         pagesTranslated++;
         done++;
         onProgress?.(pageRow.url, lang, done, total);
@@ -188,13 +185,14 @@ export async function translateProject(
     }
   }
 
-  // Generate sitemap.xml for each language
+  // Generate sitemap.xml for each language using ALL translated pages in the DB
   for (const lang of languages) {
     const outputDir = config.paths.translations[lang];
-    const langPages = translatedPagesByLang.get(lang);
-    if (outputDir && langPages && langPages.length > 0) {
-      generateSitemap(outputDir, config.url, config.targetUrls[lang] ?? '', langPages);
-      logger.debug(`Sitemap written: ${outputDir}/sitemap.xml (${langPages.length} URLs)`);
+    if (!outputDir) continue;
+    const allTranslatedUrls = dbGetTranslatedPageUrls(project.id, lang);
+    if (allTranslatedUrls.length > 0) {
+      generateSitemap(outputDir, config.url, config.targetUrls[lang] ?? '', allTranslatedUrls);
+      logger.debug(`Sitemap written: ${outputDir}/sitemap.xml (${allTranslatedUrls.length} URLs)`);
     }
   }
 
