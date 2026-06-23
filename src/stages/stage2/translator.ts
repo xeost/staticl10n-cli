@@ -36,6 +36,7 @@ export interface TranslationBatch {
  */
 export async function translateFragments(
   projectId: number,
+  pagePath: string,
   fragments: HtmlFragment[],
   targetLanguage: string,
   config: ProjectConfig,
@@ -65,12 +66,18 @@ export async function translateFragments(
     return { fragments, translatedTexts, cacheHits, cacheMisses };
   }
 
+  const startTime = Date.now();
+  let pageInputTokens = 0;
+  let pageOutputTokens = 0;
+  let pageTotalTokens = 0;
+
   // Group fragments into batches
   const batchSize = config.translation.batchSize;
   for (let i = 0; i < toTranslate.length; i += batchSize) {
     const batch = toTranslate.slice(i, i + batchSize);
-    const results = await translateBatch(
+    const { results, inputTokens: batchIn, outputTokens: batchOut, totalTokens: batchTotal } = await translateBatch(
       projectId,
+      pagePath,
       batch,
       targetLanguage,
       config,
@@ -79,6 +86,10 @@ export async function translateFragments(
         onFragmentProgress?.(++fragmentsDone, fragments.length, totalTokens);
       },
     );
+
+    pageInputTokens += batchIn;
+    pageOutputTokens += batchOut;
+    pageTotalTokens += batchTotal;
 
     for (const fragment of batch) {
       const translatedText = results.get(fragment.id);
@@ -93,24 +104,40 @@ export async function translateFragments(
     }
   }
 
+  if (toTranslate.length > 0) {
+    writeDebugPageSummary({
+      projectSlug: config.slug,
+      pagePath,
+      model: getPrimaryModel(config),
+      inputTokens: pageInputTokens,
+      outputTokens: pageOutputTokens,
+      totalTokens: pageTotalTokens,
+      durationMs: Date.now() - startTime,
+    });
+  }
+
   return { fragments, translatedTexts, cacheHits, cacheMisses };
 }
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
 
 /**
- * Sends a single batch to Ollama and returns a map of fragment id → translated text.
+ * Sends a single batch to Ollama and returns a map of fragment id → translated text and token metrics.
  * Only includes successfully verified translations — fallbacks are NOT included so
  * callers can decide whether to cache them.
  */
 async function translateBatch(
   projectId: number,
+  pagePath: string,
   fragments: HtmlFragment[],
   targetLanguage: string,
   config: ProjectConfig,
   onFragmentDone?: (tokens: number) => void,
-): Promise<Map<string, string>> {
+): Promise<{ results: Map<string, string>; inputTokens: number; outputTokens: number; totalTokens: number }> {
   const results = new Map<string, string>();
+  let batchInputTokens = 0;
+  let batchOutputTokens = 0;
+  let batchTotalTokens = 0;
 
   const models = getModels(config);
   const maxRetries = config.translation.maxRetries ?? 5;
@@ -129,8 +156,17 @@ async function translateBatch(
     modelLoop:
     for (const model of models) {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const startTime = Date.now();
+        let callText: string | null = null;
+        let inputTokens = 0;
+        let outputTokens = 0;
+        let callTokens = 0;
+        let errorMsg: string | undefined;
+        let integrityPassed = false;
+        let promptText = '';
+
         try {
-          const { text: callText, tokens: callTokens } = await callLLM(
+          const res = await callLLM(
             fragment.outerHtml,
             config.translation.sourceLanguage,
             targetLanguage,
@@ -138,16 +174,60 @@ async function translateBatch(
             fragment.isAttribute,
             model,
           );
+          callText = res.text;
+          promptText = res.prompt;
+          inputTokens = res.inputTokens;
+          outputTokens = res.outputTokens;
+          callTokens = res.totalTokens;
           fragmentTokens += callTokens;
           translated = callText;
 
           if (translated && verifyPlaceholderIntegrity(translated, fragment.placeholders)) {
+            integrityPassed = true;
+            batchInputTokens += inputTokens;
+            batchOutputTokens += outputTokens;
+            batchTotalTokens += callTokens;
+
+            writeDebugAttemptLog({
+              projectSlug: config.slug,
+              pagePath,
+              fragmentId: fragment.id,
+              model,
+              attempt,
+              inputTokens,
+              outputTokens,
+              totalTokens: callTokens,
+              durationMs: Date.now() - startTime,
+              status: 'SUCCESS',
+              integrityPassed: true,
+              prompt: promptText,
+              response: callText,
+            });
             break modelLoop;
           }
 
           logger.warn(
             `Integrity check failed for fragment ${fragment.id} (model: ${model}, attempt ${attempt}/${maxRetries})`,
           );
+          batchInputTokens += inputTokens;
+          batchOutputTokens += outputTokens;
+          batchTotalTokens += callTokens;
+
+          writeDebugAttemptLog({
+            projectSlug: config.slug,
+            pagePath,
+            fragmentId: fragment.id,
+            model,
+            attempt,
+            inputTokens,
+            outputTokens,
+            totalTokens: callTokens,
+            durationMs: Date.now() - startTime,
+            status: 'FAILED',
+            integrityPassed: false,
+            prompt: promptText,
+            response: callText ?? '',
+          });
           attemptsLog.push({
             model,
             attempt,
@@ -156,14 +236,30 @@ async function translateBatch(
           });
           translated = null;
         } catch (err) {
+          errorMsg = (err as Error).message;
           logger.warn(
-            `LLM request failed for fragment ${fragment.id} (model: ${model}, attempt ${attempt}/${maxRetries}): ${(err as Error).message}`,
+            `LLM request failed for fragment ${fragment.id} (model: ${model}, attempt ${attempt}/${maxRetries}): ${errorMsg}`,
           );
+          writeDebugAttemptLog({
+            projectSlug: config.slug,
+            pagePath,
+            fragmentId: fragment.id,
+            model,
+            attempt,
+            inputTokens: 0,
+            outputTokens: 0,
+            totalTokens: 0,
+            durationMs: Date.now() - startTime,
+            status: 'FAILED',
+            integrityPassed: false,
+            prompt: promptText || (fragment.isAttribute ? buildAttributePrompt(fragment.outerHtml, config.translation.sourceLanguage, targetLanguage, config) : buildPlaceholderPrompt(fragment.outerHtml, config.translation.sourceLanguage, targetLanguage, config)),
+            response: `[ERROR] ${errorMsg}`,
+          });
           attemptsLog.push({
             model,
             attempt,
             response: null,
-            error: (err as Error).message,
+            error: errorMsg,
           });
           await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt - 1)));
         }
@@ -191,7 +287,7 @@ async function translateBatch(
     onFragmentDone?.(fragmentTokens);
   }
 
-  return results;
+  return { results, inputTokens: batchInputTokens, outputTokens: batchOutputTokens, totalTokens: batchTotalTokens };
 }
 
 /**
@@ -271,7 +367,7 @@ async function callLLM(
   config: ProjectConfig,
   isAttribute: boolean,
   model: string,
-): Promise<{ text: string; tokens: number }> {
+): Promise<{ text: string; prompt: string; inputTokens: number; outputTokens: number; totalTokens: number }> {
   if (config.translation.provider === 'gemini') {
     return callGemini(text, sourceLang, targetLang, config, isAttribute, model);
   }
@@ -286,7 +382,7 @@ async function callOllama(
   config: ProjectConfig,
   isAttribute: boolean,
   model: string,
-): Promise<{ text: string; tokens: number }> {
+): Promise<{ text: string; prompt: string; inputTokens: number; outputTokens: number; totalTokens: number }> {
   const prompt = isAttribute
     ? buildAttributePrompt(text, sourceLang, targetLang, config)
     : buildPlaceholderPrompt(text, sourceLang, targetLang, config);
@@ -310,8 +406,16 @@ async function callOllama(
     prompt_eval_count?: number;
     eval_count?: number;
   };
-  const tokens = (data.prompt_eval_count ?? 0) + (data.eval_count ?? 0);
-  return { text: cleanResponse(data.response, isAttribute), tokens };
+  const inputTokens = data.prompt_eval_count ?? 0;
+  const outputTokens = data.eval_count ?? 0;
+  const totalTokens = inputTokens + outputTokens;
+  return {
+    text: cleanResponse(data.response, isAttribute),
+    prompt,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+  };
 }
 
 /** Builds the translation prompt for a block fragment using placeholder notation. */
@@ -692,7 +796,7 @@ async function callGemini(
   config: ProjectConfig,
   isAttribute: boolean,
   model: string,
-): Promise<{ text: string; tokens: number }> {
+): Promise<{ text: string; prompt: string; inputTokens: number; outputTokens: number; totalTokens: number }> {
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
   if (!apiKey) throw new Error('GOOGLE_GEMINI_API_KEY env var is not set');
 
@@ -716,12 +820,24 @@ async function callGemini(
 
   const data = (await response.json()) as {
     candidates?: { content?: { parts?: { text?: string }[] } }[];
-    usageMetadata?: { totalTokenCount?: number };
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+      totalTokenCount?: number;
+    };
   };
 
   const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-  const tokens = data.usageMetadata?.totalTokenCount ?? 0;
-  return { text: cleanResponse(raw, isAttribute), tokens };
+  const inputTokens = data.usageMetadata?.promptTokenCount ?? 0;
+  const outputTokens = data.usageMetadata?.candidatesTokenCount ?? 0;
+  const totalTokens = data.usageMetadata?.totalTokenCount ?? (inputTokens + outputTokens);
+  return {
+    text: cleanResponse(raw, isAttribute),
+    prompt,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+  };
 }
 
 /** Calls the Google Gemini API to translate plain-text code comments. */
@@ -783,4 +899,103 @@ export function translateJsonLdValues(
     return result;
   }
   return data;
+}
+
+// ─── Development Debug Logging ──────────────────────────────────────────────────
+
+let debugLogPath: string | null = null;
+
+/**
+ * Returns the path to the translation debug log file for the current CLI run.
+ * Initialised once per run under data/logs/ if DEBUG_TRANSLATION_LOG=true.
+ */
+function getDebugLogPath(): string | null {
+  if (process.env.DEBUG_TRANSLATION_LOG !== 'true') return null;
+  if (!debugLogPath) {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const timeStr = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+    const logDir = path.join(process.cwd(), 'data', 'logs');
+    fs.ensureDirSync(logDir);
+    debugLogPath = path.join(logDir, `translation_debug_${dateStr}_${timeStr}.log`);
+  }
+  return debugLogPath;
+}
+
+interface DebugAttemptInput {
+  projectSlug: string;
+  pagePath: string;
+  fragmentId: string;
+  model: string;
+  attempt: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  durationMs: number;
+  status: 'SUCCESS' | 'FAILED';
+  integrityPassed: boolean;
+  prompt: string;
+  response: string;
+}
+
+/**
+ * Appends a detailed attempt log for a single fragment translation.
+ */
+function writeDebugAttemptLog(input: DebugAttemptInput): void {
+  const logPath = getDebugLogPath();
+  if (!logPath) return;
+
+  const entry = `
+================================================================================
+PROJECT: ${input.projectSlug}
+PAGE PATH: ${input.pagePath}
+FRAGMENT ID: ${input.fragmentId}
+MODEL USED: ${input.model}
+RETRY NUMBER: ${input.attempt}
+STATUS: ${input.status}
+INTEGRITY PASSED: ${input.integrityPassed}
+DURATION: ${input.durationMs}ms
+TOKENS: Input: ${input.inputTokens} | Output: ${input.outputTokens} | Total: ${input.totalTokens}
+
+--- PROMPT SENT ---
+${input.prompt}
+
+--- RESPONSE RECEIVED ---
+${input.response}
+================================================================================
+`;
+  fs.appendFileSync(logPath, entry, 'utf-8');
+}
+
+interface DebugPageSummaryInput {
+  projectSlug: string;
+  pagePath: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  durationMs: number;
+}
+
+/**
+ * Appends a summary log when a page translation completes.
+ */
+function writeDebugPageSummary(input: DebugPageSummaryInput): void {
+  const logPath = getDebugLogPath();
+  if (!logPath) return;
+
+  const entry = `
+################################################################################
+######################### PAGE TRANSLATION COMPLETE ############################
+################################################################################
+PROJECT: ${input.projectSlug}
+PAGE PATH: ${input.pagePath}
+MODEL USED: ${input.model}
+TOTAL TIME TAKEN: ${input.durationMs}ms
+TOTAL TOKENS: Input: ${input.inputTokens} | Output: ${input.outputTokens} | Total: ${input.totalTokens}
+################################################################################
+################################################################################
+`;
+  fs.appendFileSync(logPath, entry, 'utf-8');
 }

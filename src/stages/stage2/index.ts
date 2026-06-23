@@ -98,6 +98,7 @@ export async function translateProject(
         // Translate fragments (uses cache)
         const { translatedTexts, cacheHits, cacheMisses } = await translateFragments(
           project.id,
+          pageRow.path,
           fragments,
           lang,
           config,
@@ -128,7 +129,7 @@ export async function translateProject(
           const cached = getCachedTranslation(project.id, text, lang, config);
           if (cached) return cached;
           const singleFragment = [{ id: 'meta_0', outerHtml: text, isAttribute: true }];
-          const result = await translateFragments(project.id, singleFragment, lang, config);
+          const result = await translateFragments(project.id, pageRow.path, singleFragment, lang, config);
           return result.translatedTexts.get('meta_0') ?? text;
         };
 
