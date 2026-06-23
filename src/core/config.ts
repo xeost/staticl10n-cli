@@ -73,8 +73,14 @@ export interface ProjectConfig {
     translations: Record<string, string>;
   };
   translation: {
-    provider: 'ollama';
-    ollamaUrl: string;
+    /**
+     * Translation provider.
+     * - "ollama": local Ollama instance (requires `ollamaUrl`).
+     * - "gemini": Google Gemini API (requires GOOGLE_GEMINI_API_KEY env var).
+     */
+    provider: 'ollama' | 'gemini';
+    /** Ollama base URL — only used when provider is "ollama". */
+    ollamaUrl?: string;
     model: string | string[];
     sourceLanguage: string;
     targetLanguages: string[];

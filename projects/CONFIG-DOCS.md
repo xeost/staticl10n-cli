@@ -42,8 +42,8 @@ Each project has a `config.json` file inside its folder under `projects/<slug>/c
   },
 
   "translation": {
-    "provider": "ollama",
-    "ollamaUrl": "http://localhost:11434",
+    "provider": "ollama",              // "ollama" | "gemini"
+    "ollamaUrl": "http://localhost:11434",  // only required for provider "ollama"
     "model": ["gemma4", "gemma3:8b"],  // array = multi-model fallback (or a single string)
     "sourceLanguage": "en",
     "targetLanguages": ["es", "fr"],
@@ -108,6 +108,87 @@ Each project has a `config.json` file inside its folder under `projects/<slug>/c
   }
 }
 ```
+
+---
+
+## Translation providers
+
+The `translation.provider` field selects which LLM backend is used. Two providers are supported:
+
+### `ollama` (default — local, no API key required)
+
+Runs translations through a locally-installed [Ollama](https://ollama.com) instance. No internet connection or API key is needed.
+
+```json
+"translation": {
+  "provider": "ollama",
+  "ollamaUrl": "http://localhost:11434",
+  "model": ["llama3.1", "gemma4"],
+  "sourceLanguage": "en",
+  "targetLanguages": ["es"]
+}
+```
+
+- `ollamaUrl` — base URL of the Ollama server. Required when using this provider.
+- `model` — a single model name or an array for multi-model fallback (tried in order when a request fails or the integrity check does not pass).
+
+### `gemini` — Google Gemini API
+
+Uses the [Google Gemini](https://ai.google.dev) REST API. Requires an API key stored in the `.env` file (see [Environment variables](#environment-variables)).
+
+```json
+"translation": {
+  "provider": "gemini",
+  "model": "gemini-2.0-flash",
+  "sourceLanguage": "en",
+  "targetLanguages": ["es"]
+}
+```
+
+- `ollamaUrl` — not used; omit it.
+- `model` — a Gemini model name (e.g. `"gemini-2.0-flash"`, `"gemini-1.5-pro"`) or an array for multi-model fallback.
+
+> Multi-model fallback works the same way for both providers: models in the array are tried in order. If all models fail for a fragment, the tool falls back to a text-node strategy before giving up.
+
+---
+
+## Environment variables
+
+Sensitive credentials (API keys) are stored in a `.env` file at the project root. **Never commit this file** — it is listed in `.gitignore`.
+
+Copy `.env.example` to `.env` and fill in the keys for the providers you use:
+
+```sh
+cp .env.example .env
+```
+
+### `.env.example` reference
+
+```dotenv
+# Google Gemini (used when translation.provider = "gemini")
+# Get your key at: https://aistudio.google.com/app/apikey
+GOOGLE_GEMINI_API_KEY=
+
+# OpenAI (reserved for future use)
+# OPENAI_API_KEY=
+
+# Mistral AI (reserved for future use)
+# MISTRAL_API_KEY=
+
+# Anthropic Claude (reserved for future use)
+# ANTHROPIC_API_KEY=
+```
+
+### Variable reference
+
+| Variable | Provider | Description |
+|---|---|---|
+| `GOOGLE_GEMINI_API_KEY` | `gemini` | Google Gemini REST API key. Required when `translation.provider` is `"gemini"`. |
+| `OPENAI_API_KEY` | *(future)* | OpenAI API key — reserved for a future provider. |
+| `MISTRAL_API_KEY` | *(future)* | Mistral AI API key — reserved for a future provider. |
+| `ANTHROPIC_API_KEY` | *(future)* | Anthropic Claude API key — reserved for a future provider. |
+
+The `.env` file is loaded automatically at startup using Node.js's built-in env-file loader (Node 20.12+). No external library is required.
 
 ---
 

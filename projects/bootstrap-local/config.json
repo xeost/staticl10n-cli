@@ -23,9 +23,8 @@
     }
   },
   "translation": {
-    "provider": "ollama",
-    "ollamaUrl": "http://localhost:11434",
-    "model": ["llama3.1", "gemma4"],
+    "provider": "gemini",
+    "model": ["gemini-2.5-flash-lite", "gemini-3.1-flash-lite"],
     "sourceLanguage": "en",
     "targetLanguages": [
       "es"

@@ -29,7 +29,7 @@ export interface TranslationBatch {
 }
 
 /**
- * Translates an array of fragments using the Ollama API.
+ * Translates an array of fragments using the configured LLM provider.
  * Checks the translation cache first; only calls the model for cache misses.
  */
 export async function translateFragments(
@@ -126,7 +126,7 @@ async function translateBatch(
     for (const model of models) {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          const { text: callText, tokens: callTokens } = await callOllama(
+          const { text: callText, tokens: callTokens } = await callLLM(
             fragment.outerHtml,
             config.translation.sourceLanguage,
             targetLanguage,
@@ -152,7 +152,7 @@ async function translateBatch(
           translated = null;
         } catch (err) {
           logger.warn(
-            `Ollama request failed for fragment ${fragment.id} (model: ${model}, attempt ${attempt}/${maxRetries}): ${(err as Error).message}`,
+            `LLM request failed for fragment ${fragment.id} (model: ${model}, attempt ${attempt}/${maxRetries}): ${(err as Error).message}`,
           );
           await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt - 1)));
         }
@@ -280,7 +280,7 @@ async function translateByTextNodes(
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const { text: result, tokens: callTokens } = await callOllama(
+        const { text: result, tokens: callTokens } = await callLLM(
           task.trimmed,
           config.translation.sourceLanguage,
           targetLanguage,
@@ -310,6 +310,23 @@ async function translateByTextNodes(
 
   const firstEl = $('body').children().first().get(0);
   return { html: firstEl ? $.html(firstEl) : null, tokens: translateTokens };
+}
+
+/**
+ * Dispatches an LLM translation call to the appropriate provider.
+ */
+async function callLLM(
+  text: string,
+  sourceLang: string,
+  targetLang: string,
+  config: ProjectConfig,
+  isAttribute: boolean,
+  model: string,
+): Promise<{ text: string; tokens: number }> {
+  if (config.translation.provider === 'gemini') {
+    return callGemini(text, sourceLang, targetLang, config, isAttribute, model);
+  }
+  return callOllama(text, sourceLang, targetLang, config, isAttribute, model);
 }
 
 /** Calls the Ollama API to translate a single fragment. */
@@ -593,7 +610,7 @@ export async function translateCodeComments(
         const models = getModels(config);
         for (const model of models) {
           try {
-            const result = await callOllamaComment(
+            const result = await callLLMComment(
               bodyText,
               config.translation.sourceLanguage,
               targetLanguage,
@@ -655,6 +672,22 @@ function redistributeLines(text: string, n: number): string[] {
   return parts;
 }
 
+/**
+ * Dispatches a code-comment translation call to the appropriate provider.
+ */
+async function callLLMComment(
+  text: string,
+  sourceLang: string,
+  targetLang: string,
+  config: ProjectConfig,
+  model: string,
+): Promise<{ text: string; tokens: number }> {
+  if (config.translation.provider === 'gemini') {
+    return callGeminiComment(text, sourceLang, targetLang, config, model);
+  }
+  return callOllamaComment(text, sourceLang, targetLang, config, model);
+}
+
 /** Calls the Ollama API to translate plain-text code comments. */
 async function callOllamaComment(
   text: string,
@@ -684,6 +717,90 @@ ${text}`;
   const tokens = (data.prompt_eval_count ?? 0) + (data.eval_count ?? 0);
   return { text: data.response.trim(), tokens };
 }
+
+// ─── Gemini Provider ─────────────────────────────────────────────────────────
+
+const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+/** Calls the Google Gemini API to translate a single fragment or attribute. */
+async function callGemini(
+  text: string,
+  sourceLang: string,
+  targetLang: string,
+  config: ProjectConfig,
+  isAttribute: boolean,
+  model: string,
+): Promise<{ text: string; tokens: number }> {
+  const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GOOGLE_GEMINI_API_KEY env var is not set');
+
+  const prompt = isAttribute
+    ? buildAttributePrompt(text, sourceLang, targetLang, config)
+    : buildHtmlPrompt(text, sourceLang, targetLang, config);
+
+  const response = await fetch(`${GEMINI_BASE_URL}/${model}:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1 },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Gemini returned HTTP ${response.status}: ${body}`);
+  }
+
+  const data = (await response.json()) as {
+    candidates?: { content?: { parts?: { text?: string }[] } }[];
+    usageMetadata?: { totalTokenCount?: number };
+  };
+
+  const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const tokens = data.usageMetadata?.totalTokenCount ?? 0;
+  return { text: cleanResponse(raw, isAttribute), tokens };
+}
+
+/** Calls the Google Gemini API to translate plain-text code comments. */
+async function callGeminiComment(
+  text: string,
+  sourceLang: string,
+  targetLang: string,
+  config: ProjectConfig,
+  model: string,
+): Promise<{ text: string; tokens: number }> {
+  const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GOOGLE_GEMINI_API_KEY env var is not set');
+
+  const lineCount = text.split('\n').length;
+  const prompt = `Translate the following text from ${sourceLang} to ${targetLang}.\nKeep exactly ${lineCount} line${lineCount > 1 ? 's' : ''} in the output.\nReply with only the translated text, nothing else.\n\n${text}`;
+
+  const response = await fetch(`${GEMINI_BASE_URL}/${model}:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1 },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Gemini returned HTTP ${response.status}: ${body}`);
+  }
+
+  const data = (await response.json()) as {
+    candidates?: { content?: { parts?: { text?: string }[] } }[];
+    usageMetadata?: { totalTokenCount?: number };
+  };
+
+  const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const tokens = data.usageMetadata?.totalTokenCount ?? 0;
+  return { text: raw.trim(), tokens };
+}
+
+// ─── JSON-LD ──────────────────────────────────────────────────────────────────
 
 /** Translates JSON-LD structured data values. */
 export function translateJsonLdValues(

@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+
+// Load .env file if present (Node.js 20.12+ built-in — no dotenv required)
+try { (process as typeof process & { loadEnvFile?: () => void }).loadEnvFile?.(); } catch { /* .env is optional */ }
+
 import chalk from 'chalk';
 import { Command } from 'commander';
 import inquirer from 'inquirer';
