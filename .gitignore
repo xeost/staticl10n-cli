@@ -4,4 +4,4 @@ dist/
 data/logs/
 *.js.map
 .wrangler/
-temp-public-static2/
+temp-public-static/
