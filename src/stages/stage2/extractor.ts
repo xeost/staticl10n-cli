@@ -104,7 +104,7 @@ export function extractFragments(
       const outer = $.html(el);
       const textRatio = computeTextRatio(outer);
 
-      if ((ALWAYS_EXTRACT_TAGS.has(tag) || textRatio > 0.6 || hasDirectSignificantText(el)) && hasSignificantText(getTextContent($, el))) {
+      if (!hasBlockDescendants(el) && (ALWAYS_EXTRACT_TAGS.has(tag) || textRatio > 0.6 || hasDirectSignificantText(el)) && hasSignificantText(getTextContent($, el))) {
         // Build placeholder-mapped text and check token budget against it
         const { text: placeholderText, placeholders } = buildPlaceholderText(el);
         const tokenCount = Math.ceil(placeholderText.length / 4);
@@ -206,6 +206,31 @@ function buildAttribString(attribs: Record<string, string> | undefined): string 
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Returns true if the element contains any descendant tags that are considered
+ * block-level elements (i.e. not inline tags and not void inline tags).
+ * This ensures we do not collapse parent blocks (like divs containing headers/paragraphs)
+ * into a single flat fragment, preserving the original DOM structural formatting.
+ */
+function hasBlockDescendants(el: Element): boolean {
+  let hasBlock = false;
+
+  function check(node: AnyNode) {
+    if (hasBlock) return;
+    if (node.type === 'tag') {
+      const tag = (node as Element).tagName?.toLowerCase();
+      if (tag && !INLINE_TAGS.has(tag) && !VOID_INLINE_TAGS.has(tag)) {
+        hasBlock = true;
+        return;
+      }
+      ((node as Element).children as AnyNode[])?.forEach(check);
+    }
+  }
+
+  (el.children as AnyNode[])?.forEach(check);
+  return hasBlock;
+}
 
 /**
  * Returns true if the element has at least one direct text-node child with
