@@ -2,7 +2,7 @@ import * as cheerio from 'cheerio';
 import type { AnyNode, Element, Text } from 'domhandler';
 import type { ProjectConfig } from '../../core/config.js';
 import { logger } from '../../utils/logger.js';
-import type { HtmlFragment } from './extractor.js';
+import type { HtmlFragment, PlaceholderEntry } from './extractor.js';
 import { getCachedTranslation, storeCachedTranslation } from './cache.js';
 
 // ─── Model Helpers ────────────────────────────────────────────────────────────
@@ -137,13 +137,8 @@ async function translateBatch(
           fragmentTokens += callTokens;
           translated = callText;
 
-          if (translated) {
-            if (!fragment.isAttribute) {
-              translated = restoreStructuralAttributes(fragment.outerHtml, translated);
-            }
-            if (verifyTranslationIntegrity(fragment.outerHtml, translated, fragment.isAttribute)) {
-              break modelLoop;
-            }
+          if (translated && verifyPlaceholderIntegrity(translated, fragment.placeholders)) {
+            break modelLoop;
           }
 
           logger.warn(
@@ -164,152 +159,14 @@ async function translateBatch(
 
     if (translated) {
       results.set(fragment.id, translated);
-    } else if (!fragment.isAttribute) {
-      // All models exhausted — fall back to translating text nodes individually.
-      logger.warn(`All models exhausted for fragment ${fragment.id}. Falling back to text-node strategy.`);
-      const { html: textNodeResult, tokens: fallbackTokens } = await translateByTextNodes(fragment, targetLanguage, config);
-      fragmentTokens += fallbackTokens;
-      if (textNodeResult) {
-        results.set(fragment.id, textNodeResult);
-      } else {
-        logger.warn(`Keeping original for fragment ${fragment.id} after all strategies failed (not cached).`);
-      }
     } else {
-      logger.warn(`Keeping original for attribute fragment ${fragment.id} after all models failed (not cached).`);
+      logger.warn(`Keeping original for fragment ${fragment.id} after all models failed (not cached).`);
     }
 
     onFragmentDone?.(fragmentTokens);
   }
 
   return results;
-}
-
-/**
- * Restores non-translatable attribute values (class, id, href, src) in a translated
- * HTML fragment by matching elements to their originals via depth-first traversal order.
- * Called before the integrity check to prevent spurious failures caused by the model
- * accidentally altering structural attributes.
- */
-function restoreStructuralAttributes(original: string, translated: string): string {
-  const $orig = cheerio.load(original);
-  const $trans = cheerio.load(translated);
-  const RESTORE_ATTRS = ['class', 'id', 'href', 'src'];
-
-  function collectElements(root: Element): Element[] {
-    const els: Element[] = [];
-    function walk(el: Element): void {
-      els.push(el);
-      for (const child of (el.children ?? []) as AnyNode[]) {
-        if (child.type === 'tag') walk(child as Element);
-      }
-    }
-    for (const child of (root.children ?? []) as AnyNode[]) {
-      if (child.type === 'tag') walk(child as Element);
-    }
-    return els;
-  }
-
-  const origBody = $orig('body').get(0) as Element | undefined;
-  const transBody = $trans('body').get(0) as Element | undefined;
-  if (!origBody || !transBody) return translated;
-
-  const origEls = collectElements(origBody);
-  const transEls = collectElements(transBody);
-
-  const len = Math.min(origEls.length, transEls.length);
-  for (let i = 0; i < len; i++) {
-    const orig = origEls[i];
-    const trans = transEls[i];
-    if (orig.tagName !== trans.tagName) continue;
-    for (const attr of RESTORE_ATTRS) {
-      if (orig.attribs[attr] !== undefined) {
-        trans.attribs[attr] = orig.attribs[attr];
-      } else if (trans.attribs[attr] !== undefined) {
-        delete trans.attribs[attr];
-      }
-    }
-  }
-
-  const firstEl = $trans('body').children().first().get(0);
-  return firstEl ? $trans.html(firstEl) : translated;
-}
-
-/**
- * Fallback strategy: translates only the visible text nodes inside an HTML fragment,
- * leaving all tags, attributes, and structure completely untouched.
- * Returns the modified outer HTML, or null if nothing could be translated.
- */
-async function translateByTextNodes(
-  fragment: HtmlFragment,
-  targetLanguage: string,
-  config: ProjectConfig,
-): Promise<{ html: string | null; tokens: number }> {
-  const $ = cheerio.load(fragment.outerHtml);
-  const SKIP_TEXT_TAGS = new Set(['script', 'style', 'code', 'pre', 'noscript']);
-
-  interface TextTask { node: Text; trimmed: string }
-  const tasks: TextTask[] = [];
-
-  function collectTextNodes(node: AnyNode): void {
-    if (node.type === 'text') {
-      const data = (node as Text).data ?? '';
-      const trimmed = data.trim();
-      if (trimmed.length > 1 && /[a-zA-ZÀ-ÿ\u4e00-\u9fa5\u3040-\u30ff]/.test(trimmed)) {
-        tasks.push({ node: node as Text, trimmed });
-      }
-      return;
-    }
-    if (node.type === 'tag') {
-      const el = node as Element;
-      if (SKIP_TEXT_TAGS.has(el.tagName?.toLowerCase() ?? '')) return;
-      ((el.children ?? []) as AnyNode[]).forEach(collectTextNodes);
-    }
-  }
-
-  const bodyEl = $('body').get(0) as Element | undefined;
-  ((bodyEl?.children ?? []) as AnyNode[]).forEach(collectTextNodes);
-
-  if (tasks.length === 0) return { html: null, tokens: 0 };
-
-  const maxRetries = config.translation.maxRetries ?? 5;
-  let anyTranslated = false;
-  let translateTokens = 0;
-
-  for (const task of tasks) {
-    let translated: string | null = null;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const { text: result, tokens: callTokens } = await callLLM(
-          task.trimmed,
-          config.translation.sourceLanguage,
-          targetLanguage,
-          config,
-          true, // isAttribute=true → plain-text prompt and plain-text response
-          getPrimaryModel(config),
-        );
-        translateTokens += callTokens;
-        if (result && result.trim().length > 0 && !hasPromptLeakage(result)) {
-          translated = result.trim();
-          break;
-        }
-      } catch {
-        // silently continue to next attempt
-      }
-    }
-
-    if (translated) {
-      const leading = task.node.data.match(/^(\s*)/)?.[1] ?? '';
-      const trailing = task.node.data.match(/(\s*)$/)?.[1] ?? '';
-      task.node.data = leading + translated + trailing;
-      anyTranslated = true;
-    }
-  }
-
-  if (!anyTranslated) return { html: null, tokens: translateTokens };
-
-  const firstEl = $('body').children().first().get(0);
-  return { html: firstEl ? $.html(firstEl) : null, tokens: translateTokens };
 }
 
 /**
@@ -340,7 +197,7 @@ async function callOllama(
 ): Promise<{ text: string; tokens: number }> {
   const prompt = isAttribute
     ? buildAttributePrompt(text, sourceLang, targetLang, config)
-    : buildHtmlPrompt(text, sourceLang, targetLang, config);
+    : buildPlaceholderPrompt(text, sourceLang, targetLang, config);
 
   const response = await fetch(`${config.translation.ollamaUrl}/api/generate`, {
     method: 'POST',
@@ -365,8 +222,8 @@ async function callOllama(
   return { text: cleanResponse(data.response, isAttribute), tokens };
 }
 
-/** Builds the translation prompt for an HTML fragment. */
-function buildHtmlPrompt(html: string, sourceLang: string, targetLang: string, config: ProjectConfig): string {
+/** Builds the translation prompt for a block fragment using placeholder notation. */
+function buildPlaceholderPrompt(text: string, sourceLang: string, targetLang: string, config: ProjectConfig): string {
   const contextLine = config.translation.context
     ? `\nContext: ${config.translation.context}\n`
     : '';
@@ -374,18 +231,15 @@ function buildHtmlPrompt(html: string, sourceLang: string, targetLang: string, c
     ? `\n- Never translate these terms (keep them verbatim): ${config.translation.preserveTerms.join(', ')}\n`
     : '';
 
-  return `Translate the visible text inside the <source> tags from ${sourceLang} to ${targetLang}.
-${contextLine}
+  return `Translate the following text from ${sourceLang} to ${targetLang}.${contextLine}
 Guidelines:
-- Tone: professional and friendly. Use the informal/familiar form of address (e.g., "tú" in Spanish, "tu" in French, "du" in German, "tu" in Italian) — never the formal form (e.g., "usted", "vous", "Sie", "Lei").
-- Match the style of the original: keep concise text concise, keep explanatory text explanatory.
-- Do NOT translate: HTML tags, attributes, class names, IDs, URLs, code snippets, technical identifiers, or brand/product names.${termsLine}- Keep all whitespace, line breaks, and HTML structure exactly as in the source.
-- Do NOT include notes, explanations, or comments about your translation. Output ONLY the translated HTML.
-- Reply with only the translated HTML, nothing else.
+- Use an informal, friendly tone (e.g. "tú" in Spanish, "tu" in French, "du" in German).
+- Preserve ALL placeholder tags exactly as they appear (e.g. <1>, </1>, <2/>). Place each tag around the equivalent translated words to maintain correct grammar.
+- Do NOT translate, modify, add, or remove any placeholder tags.
+- Do not translate technical terms, URLs, code, or brand names.${termsLine}
+- Reply with ONLY the translated text, nothing else.
 
-<source>
-${html}
-</source>`;
+<source>${text}</source>`;
 }
 
 /** Builds the translation prompt for a plain-text attribute value. */
@@ -453,63 +307,35 @@ function hasPromptLeakage(text: string): boolean {
 }
 
 /**
- * Verifies structural integrity of a translated HTML fragment.
- * Checks that tag counts match (reordering is allowed).
- * Returns true if the translation is valid.
+ * Verifies that placeholder tags are preserved in the translated text.
+ * Checks that every placeholder number in the original map appears
+ * with matching open/close tags in the translation.
  */
-function verifyTranslationIntegrity(
-  original: string,
+function verifyPlaceholderIntegrity(
   translated: string,
-  isAttribute: boolean,
+  placeholders: Map<number, PlaceholderEntry> | undefined,
 ): boolean {
-  if (isAttribute) return translated.trim().length > 0 && !hasPromptLeakage(translated);
+  if (!placeholders || placeholders.size === 0) return !hasPromptLeakage(translated);
 
-  const originalCounts = countTags(original);
-  const translatedCounts = countTags(translated);
+  for (const [n, entry] of placeholders) {
+    const openTag = `<${n}>`;
+    const closeTag = `</${n}>`;
+    const voidTag = `<${n}/>`;
 
-  for (const [tag, count] of originalCounts) {
-    if (translatedCounts.get(tag) !== count) {
-      return false;
+    const hasOpen = translated.includes(openTag);
+    const hasClose = translated.includes(closeTag);
+    const hasVoid = translated.includes(voidTag);
+
+    if (entry.close === '') {
+      // Void element: expect <N/>
+      if (!hasVoid) return false;
+    } else {
+      // Paired element: expect both <N> and </N>
+      if (!hasOpen || !hasClose) return false;
     }
   }
 
-  // Verify attributes are preserved
-  const originalAttrs = extractSignificantAttributes(original);
-  const translatedAttrs = extractSignificantAttributes(translated);
-
-  for (const attr of originalAttrs) {
-    if (!translatedAttrs.has(attr)) return false;
-  }
-
-  return true;
-}
-
-/** Counts the number of each HTML tag in a string. */
-function countTags(html: string): Map<string, number> {
-  const $ = cheerio.load(html);
-  const counts = new Map<string, number>();
-  $('*').each((_i, el) => {
-    if (el.type === 'tag') {
-      const tag = el.tagName.toLowerCase();
-      counts.set(tag, (counts.get(tag) ?? 0) + 1);
-    }
-  });
-  return counts;
-}
-
-/** Extracts class, id, href, src attribute values from HTML for integrity checking. */
-function extractSignificantAttributes(html: string): Set<string> {
-  const attrs = new Set<string>();
-  const $ = cheerio.load(html);
-  $('[class],[id],[href],[src]').each((_i, el) => {
-    if (el.type !== 'tag') return;
-    const a = el.attribs;
-    if (a.class) attrs.add(`class:${a.class}`);
-    if (a.id) attrs.add(`id:${a.id}`);
-    if (a.href) attrs.add(`href:${a.href}`);
-    if (a.src) attrs.add(`src:${a.src}`);
-  });
-  return attrs;
+  return !hasPromptLeakage(translated);
 }
 
 // ─── Code Comment Translator ─────────────────────────────────────────────────
@@ -736,7 +562,7 @@ async function callGemini(
 
   const prompt = isAttribute
     ? buildAttributePrompt(text, sourceLang, targetLang, config)
-    : buildHtmlPrompt(text, sourceLang, targetLang, config);
+    : buildPlaceholderPrompt(text, sourceLang, targetLang, config);
 
   const response = await fetch(`${GEMINI_BASE_URL}/${model}:generateContent?key=${apiKey}`, {
     method: 'POST',

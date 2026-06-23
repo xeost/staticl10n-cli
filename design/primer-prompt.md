@@ -284,35 +284,53 @@ CREATE TABLE change_detections (
 
 ### ETAPA 2 — Traducción con Ollama
 
-1. **Extracción de fragmentos HTML**: Con `cheerio` extraer fragmentos de HTML completos (bloques de nivel `<section>`, `<article>`, `<div>` o `<p>` con contenido textual) que contengan contenido traducible. Estrategia de extracción **greedy upward**:
+1. **Extracción de fragmentos con placeholders**: Con `cheerio` extraer fragmentos de bloques de nivel (`<section>`, `<article>`, `<div>`, `<p>`, etc.) que contengan contenido traducible. Estrategia de extracción **greedy upward**:
    - Recorrer el DOM top-down.
-   - Al encontrar un elemento con contenido textual significativo (ratio texto/markup > 60%), extraer su outerHTML completo como fragmento.
+   - Al encontrar un elemento con contenido textual significativo (ratio texto/markup > 60%), extraerlo como fragmento.
    - **No extraer hijos de un fragmento ya extraído** para evitar doble traducción.
    - Si un fragmento excede `maxFragmentTokens`, dividirlo en sus hijos directos y extraer cada uno como fragmento independiente.
    - Ignorar fragmentos que sean solo números, símbolos o whitespace.
 
+   **Estrategia de placeholders (marcadores)**: En lugar de enviar el HTML crudo al modelo, los elementos inline (`<a>`, `<span>`, `<strong>`, `<b>`, `<em>`, `<code>`, etc.) se reemplazan por marcadores numéricos simples:
+   - Elementos con apertura/cierre: `<span class="bold">texto</span>` → `<1>texto</1>`
+   - Elementos void (self-closing): `<br>` → `<1/>`
+   - Los tags HTML originales con todos sus atributos se guardan en un mapa en memoria para reconstrucción posterior.
+
+   Esto logra tres objetivos:
+   - **Contexto gramatical completo**: El modelo recibe frases enteras (ej. `Start your <1>journey</1> today`) en lugar de fragmentos de texto aislados, lo que permite traducciones gramaticalmente correctas en idiomas donde el orden de las palabras cambia.
+   - **Ahorro masivo de tokens**: Atributos pesados como URLs largas, clases CSS, IDs, etc. no se envían al modelo, reduciendo drásticamente el consumo de tokens y acelerando la inferencia local.
+   - **Protección del DOM**: El modelo nunca ve los atributos HTML originales, por lo que no puede alucinar clases CSS, romper enlaces o modificar URLs.
+
    Exclusiones al extraer:
    - Elementos `<script>` y `<style>` completos (no enviarlos a traducir).
-   - Atributos técnicos: la IA solo debe traducir contenido legible, manteniendo intactas las clases CSS, IDs y URLs.
    - Bloques `<script type="application/ld+json">` (tienen tratamiento separado como JSON).
 
-   **Extracción de atributos traducibles**: Además de los fragmentos HTML, extraer los valores de atributos `alt`, `title`, `placeholder`, `aria-label` y `aria-description` de todos los elementos que los contengan. Estos se envían como fragmentos adicionales de texto plano (no HTML) al modelo de IA y se traducen por separado. La inyección posterior reemplaza el valor del atributo original con el traducido, tanto en el HTML directo como en el diccionario del runtime patch.
+   **Extracción de atributos traducibles**: Además de los fragmentos de bloques, extraer los valores de atributos `alt`, `title`, `placeholder`, `aria-label` y `aria-description` de todos los elementos que los contengan. Estos se envían como fragmentos adicionales de texto plano (no HTML) al modelo de IA y se traducen por separado. La inyección posterior reemplaza el valor del atributo original con el traducido, tanto en el HTML directo como en el diccionario del runtime patch.
 
    Agrupar fragmentos en batches según `batchSize`.
 
 2. **Consulta de caché**: Antes de enviar un batch a la IA, calcular el SHA-256 de cada fragmento y buscar en `translation_cache`. Los fragmentos con caché válida se reutilizan directamente sin consumir tokens de IA. Solo los fragmentos sin caché se envían a traducir. Tras recibir las traducciones, guardarlas en `translation_cache` para futuros usos.
 
-3. **Traducción y Verificación**: Enviar cada batch de fragmentos HTML nuevos a la API de Ollama (modelos como Gemma 4 son excelentes para esto). El prompt debe instruir traducir los textos manteniendo la estructura HTML intacta.
-   **Verificación de integridad**: Tras recibir la respuesta, parsear el HTML traducido y compararlo con el original:
-   - Debe tener exactamente la misma cantidad de elementos por tipo de tag (ej. mismo número de `<span>`, `<a>`, `<strong>`, etc.), pero **se permite reordenamiento** de los elementos hijos cuando el idioma lo requiere.
-   - Los atributos `class`, `id`, `href`, `src` deben ser idénticos al original. La verificación emparea elementos por tipo de tag + atributos, no por posición en el DOM.
-   - No se verifican text nodes (son los que cambian al traducir).
-   - Si la integridad falla, descartar y reintentar la traducción (máximo 3 intentos por fragmento).
+3. **Traducción y Verificación**: Enviar cada batch de fragmentos nuevos a la API del proveedor configurado (Ollama o Google Gemini). El prompt instruye al modelo a:
+   - Traducir el texto al idioma destino.
+   - **Preservar todos los marcadores numéricos exactamente como aparecen** (ej. `<1>`, `</1>`, `<2/>`).
+   - Colocar cada marcador alrededor de las palabras traducidas equivalentes para mantener la gramática correcta.
 
-4. **Inyección dual** — El HTML traducido se aplica de dos formas complementarias:
+   **Verificación de integridad**: Tras recibir la respuesta, verificar que todos los marcadores del original estén presentes en la traducción:
+   - Para elementos con apertura/cierre: verificar que exista tanto `<N>` como `</N>`.
+   - Para elementos void: verificar que exista `<N/>`.
+   - Si falta algún marcador, descartar y reintentar la traducción (máximo `maxRetries` intentos, default 5).
+   - Si todos los intentos fallan para el modelo actual, intentar con el siguiente modelo en el array `model` (multi-model fallback).
+
+4. **Reconstrucción HTML**: Una vez verificada la traducción, reemplazar los marcadores numéricos con los tags HTML originales guardados en el mapa:
+   - `<1>` → `<span class="bold">`
+   - `</1>` → `</span>`
+   - `<2/>` → `<br>`
+
+   El HTML reconstruido se inyecta de dos formas complementarias:
 
    **a) Reemplazo directo en HTML (para el contenido estático inicial):**
-   - Reemplazar los fragmentos de HTML original con los traducidos en el documento destino.
+   - Reemplazar el `innerHTML` del elemento marcado con `data-sl-id` con el HTML reconstruido.
    - Esto garantiza que el primer render de la página muestre el texto traducido (bueno para SEO y primer paint).
 
    **b) Generación del patch de runtime `translations.js` (defensa contra hidratación de React):**

@@ -353,25 +353,27 @@ Results are saved to the database and printed to stdout. Pending changes can the
 
 ## How Translation Works
 
-1. **Fragment extraction** — `cheerio` walks the DOM top-down. Block elements with a text/markup ratio > 60% are extracted as complete HTML fragments. Children of already-extracted elements are skipped to avoid double-translation.
+1. **Fragment extraction with placeholders** — `cheerio` walks the DOM top-down. Block elements with a text/markup ratio > 60% are extracted. Instead of sending raw HTML to the LLM, inline elements (`<a>`, `<span>`, `<strong>`, etc.) are replaced with numbered placeholder tags (e.g. `<1>`, `</1>`, `<2/>`). The original HTML tags and attributes are stored in a map for later reconstruction. This reduces token consumption (heavy attributes like long URLs are stripped) and ensures the LLM receives complete sentences with context, not isolated text nodes.
 
 2. **Cache lookup** — each fragment is SHA-256 hashed. Entries are matched by hash, target language, **and the configured model name** — switching to a different model automatically bypasses stale cache entries. The optional `cacheExpiry` setting (in seconds) limits how long entries are reused; set it to `0` to disable the cache entirely (default: `-1`, no expiry).
 
-3. **Ollama API call** — uncached fragments are sent to Ollama in batches. The model is instructed to translate visible text while preserving all HTML tags, attributes, class names, IDs and URLs.
+3. **LLM API call** — uncached fragments are sent to the configured provider (Ollama or Google Gemini) in batches. The prompt instructs the model to translate the text while preserving all placeholder tags exactly as they appear. The model places each placeholder around the equivalent translated words to maintain correct grammar (e.g. `Start your <1>journey</1> today` → `Comienza tu <1>viaje</1> hoy`).
 
-4. **Integrity verification & multi-model fallback** — the translated HTML is parsed and tag counts + significant attributes are compared with the original. Failures trigger automatic retries up to `maxRetries` (default 5) for the current model. If all retries for that model fail, the next model in the `model` array is tried with a fresh `maxRetries` budget. Once all models are exhausted, a text-node fallback strategy translates only the visible text nodes while leaving the HTML structure untouched. Setting `model` to a plain string is equivalent to a single-element array. All translations are cached under the primary (first) model name, so switching models in the array does not invalidate existing cache entries.
+4. **Integrity verification & multi-model fallback** — the translated text is checked to ensure all placeholder tags from the original are present (paired `<N>`/`</N>` or void `<N/>`). Failures trigger automatic retries up to `maxRetries` (default 5) for the current model. If all retries for that model fail, the next model in the `model` array is tried with a fresh `maxRetries` budget. Setting `model` to a plain string is equivalent to a single-element array. All translations are cached under the primary (first) model name, so switching models in the array does not invalidate existing cache entries.
 
-5. **Code comment translation** — after the main fragment pass, each `<pre><code>` block is scanned for Prism `token comment` spans. Contiguous groups (e.g. consecutive `//` comment lines) are joined, sent to the model as plain text, and the translated lines are redistributed back into the original spans. Code, identifiers, strings, and all HTML structure are never touched. Set `translateCodeBlockComments: false` to disable this step.
+5. **HTML reconstruction** — after translation, placeholders are replaced with the original HTML tags (e.g. `<1>` → `<span class="bold">`, `</1>` → `</span>`). The reconstructed HTML is injected back into the document.
 
-6. **Link rewriting** — every `<a href>` is inspected and classified:
+6. **Code comment translation** — after the main fragment pass, each `<pre><code>` block is scanned for Prism `token comment` spans. Contiguous groups (e.g. consecutive `//` comment lines) are joined, sent to the model as plain text, and the translated lines are redistributed back into the original spans. Code, identifiers, strings, and all HTML structure are never touched. Set `translateCodeBlockComments: false` to disable this step.
+
+7. **Link rewriting** — every `<a href>` is inspected and classified:
    - **Translated page** — relative links are left unchanged; absolute links that pointed to the source site (e.g. `http://localhost/…`) are rewritten to the target language domain.
    - **Not-yet-translated page** — the link is rewritten to an absolute URL on the original site (`config.url`), so visitors are never directed to a missing translated page. When running *Test: process single page*, all pages that were already translated in previous runs are treated as available and keep their relative links; only truly untranslated pages are redirected to the original.
 
-7. **Sitemap generation** — after all pages are translated, a `sitemap.xml` is written to the root of each language's output directory. URLs are computed by appending each page's path to the `targetUrls[lang]` configured for that language (falls back to `url` if not set). The sitemap always reflects the **complete set of translated pages** stored in the database — not just those processed in the current run — so partial runs (e.g. single-page tests) still produce a full sitemap.
+8. **Sitemap generation** — after all pages are translated, a `sitemap.xml` is written to the root of each language's output directory. URLs are computed by appending each page's path to the `targetUrls[lang]` configured for that language (falls back to `url` if not set). The sitemap always reflects the **complete set of translated pages** stored in the database — not just those processed in the current run — so partial runs (e.g. single-page tests) still produce a full sitemap.
 
-8. **Dual injection** — translated HTML is written directly into the output file (for SEO / first paint) AND stored in a per-page `translations.js` dictionary (for Next.js rehydration defense).
+9. **Dual injection** — translated HTML is written directly into the output file (for SEO / first paint) AND stored in a per-page `translations.js` dictionary (for Next.js rehydration defense).
 
-9. **Meta & SEO** — `<title>`, `<meta name="description">`, Open Graph, Twitter Card, JSON-LD structured data, `<html lang>`, and `hreflang` alternate links are all processed.
+10. **Meta & SEO** — `<title>`, `<meta name="description">`, Open Graph, Twitter Card, JSON-LD structured data, `<html lang>`, and `hreflang` alternate links are all processed.
 
 ---
 

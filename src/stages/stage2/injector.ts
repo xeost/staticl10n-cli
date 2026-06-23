@@ -1,7 +1,33 @@
 import * as cheerio from 'cheerio';
-import type { HtmlFragment } from './extractor.js';
+import type { HtmlFragment, PlaceholderEntry } from './extractor.js';
 
 // ─── Translation Injector ─────────────────────────────────────────────────────
+
+/**
+ * Reconstructs HTML from placeholder-mapped translated text.
+ * Replaces numbered placeholders (<1>, </1>, <2/>) with the original
+ * HTML open/close tags stored in the placeholders map.
+ */
+function reconstructFromPlaceholders(
+  translated: string,
+  placeholders: Map<number, PlaceholderEntry>,
+): string {
+  let result = translated;
+  for (const [n, entry] of placeholders) {
+    const openTag = `<${n}>`;
+    const closeTag = `</${n}>`;
+    const voidTag = `<${n}/>`;
+
+    if (entry.close === '') {
+      // Void element: replace <N/> with original open tag (no close)
+      result = result.replace(voidTag, entry.open);
+    } else {
+      // Paired element: replace <N> with open, </N> with close
+      result = result.replace(openTag, entry.open).replace(closeTag, entry.close);
+    }
+  }
+  return result;
+}
 
 /**
  * Injects translated fragments back into the HTML document.
@@ -26,16 +52,19 @@ export function injectTranslations(
           $(el).attr(fragment.attributeName!, translated);
         }
       });
-    } else {
-      // Replace innerHTML of the element with data-sl-id
+    } else if (fragment.placeholders) {
+      // Block fragment: reconstruct HTML from placeholders before injection
+      const reconstructed = reconstructFromPlaceholders(translated, fragment.placeholders);
       $(`[data-sl-id="${fragment.id}"]`).each((_i, el) => {
         if (el.type === 'tag') {
-          // The model returns the full outer element; extract its inner HTML.
-          // Use body > first-child to avoid the <html><head></head><body> Cheerio wrapper.
-          const $translated = cheerio.load(translated);
-          const firstChild = $translated('body').children().first();
-          const innerHtml = (firstChild.length > 0 ? firstChild.html() : $translated('body').html()) ?? translated;
-          $(el).html(innerHtml);
+          $(el).html(reconstructed);
+        }
+      });
+    } else {
+      // Fallback: no placeholders (should not happen with new strategy)
+      $(`[data-sl-id="${fragment.id}"]`).each((_i, el) => {
+        if (el.type === 'tag') {
+          $(el).html(translated);
         }
       });
     }

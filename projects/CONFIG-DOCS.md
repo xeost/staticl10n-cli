@@ -148,7 +148,7 @@ Uses the [Google Gemini](https://ai.google.dev) REST API. Requires an API key st
 - `ollamaUrl` — not used; omit it.
 - `model` — a Gemini model name (e.g. `"gemini-2.0-flash"`, `"gemini-1.5-pro"`) or an array for multi-model fallback.
 
-> Multi-model fallback works the same way for both providers: models in the array are tried in order. If all models fail for a fragment, the tool falls back to a text-node strategy before giving up.
+> Multi-model fallback works the same way for both providers: models in the array are tried in order. If all models fail for a fragment, the original text is kept and a warning is logged.
 
 ---
 

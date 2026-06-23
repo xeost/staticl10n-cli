@@ -3,13 +3,30 @@ import type { AnyNode, Element, Text } from 'domhandler';
 
 // ─── HTML Fragment Extractor ──────────────────────────────────────────────────
 
+export interface PlaceholderEntry {
+  /** Opening HTML tag with all original attributes, e.g. '<a href="/docs">'. */
+  open: string;
+  /** Closing tag, e.g. '</a>'. Empty string for void elements. */
+  close: string;
+}
+
 export interface HtmlFragment {
   id: string;
+  /**
+   * For attribute fragments: the original attribute value sent to the LLM.
+   * For block fragments: placeholder-mapped text sent to the LLM
+   *   (e.g. "Start your <1>journey</1> today").
+   */
   outerHtml: string;
   isAttribute: boolean;
   attributeName?: string;
-  /** CSS-like selector to locate the element for attribute fragments */
+  /** CSS-like selector to locate the element for attribute fragments. */
   elementSelector?: string;
+  /**
+   * For block fragments: maps each placeholder number to its original HTML
+   * open/close tags. Used to reconstruct the translated HTML after LLM response.
+   */
+  placeholders?: Map<number, PlaceholderEntry>;
 }
 
 // Block-level tags that are candidates for extraction
@@ -29,6 +46,17 @@ const ALWAYS_EXTRACT_TAGS = new Set([
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'figcaption', 'caption', 'dt', 'label',
   'a', 'small', 'button', 'span',
 ]);
+
+// Inline elements that are replaced with numbered placeholder tags when building
+// the text sent to the LLM, e.g. <span class="bold"> → <1>
+const INLINE_TAGS = new Set([
+  'a', 'abbr', 'acronym', 'b', 'bdo', 'big', 'button', 'cite', 'code', 'del',
+  'dfn', 'em', 'i', 'ins', 'kbd', 'label', 'mark', 'q', 's', 'samp', 'small',
+  'span', 'strong', 'sub', 'sup', 'time', 'u', 'var',
+]);
+
+// Void inline elements that produce self-closing placeholders: <N/>
+const VOID_INLINE_TAGS = new Set(['br', 'wbr']);
 
 // Translatable attribute names
 const TRANSLATABLE_ATTRS = ['alt', 'title', 'placeholder', 'aria-label', 'aria-description'];
@@ -75,16 +103,14 @@ export function extractFragments(
       const textRatio = computeTextRatio(outer);
 
       if ((ALWAYS_EXTRACT_TAGS.has(tag) || textRatio > 0.6 || hasDirectSignificantText(el)) && hasSignificantText(getTextContent($, el))) {
-        // Assign a unique data-sl-id
-        const id = `f${++counter}`;
-        $(el).attr('data-sl-id', id);
-        const finalOuter = $.html(el);
-
-        // Check token budget; split if necessary
-        const tokenCount = Math.ceil(finalOuter.length / 4);
+        // Build placeholder-mapped text and check token budget against it
+        const { text: placeholderText, placeholders } = buildPlaceholderText(el);
+        const tokenCount = Math.ceil(placeholderText.length / 4);
 
         if (tokenCount <= maxFragmentTokens) {
-          fragments.push({ id, outerHtml: finalOuter, isAttribute: false });
+          const id = `f${++counter}`;
+          $(el).attr('data-sl-id', id);
+          fragments.push({ id, outerHtml: placeholderText, isAttribute: false, placeholders });
           extractedNodes.add(node);
           return; // Do not descend further
         }
@@ -120,6 +146,60 @@ export function extractFragments(
   });
 
   return { html: $.html(), fragments };
+}
+
+// ─── Placeholder Builder ─────────────────────────────────────────────────────
+
+/**
+ * Walks the children of a block element and produces placeholder-mapped text.
+ * Inline elements are replaced by numbered markers (e.g. <1>text</1>) and
+ * the original open/close tags are stored in the returned placeholders map.
+ */
+function buildPlaceholderText(
+  blockEl: Element,
+): { text: string; placeholders: Map<number, PlaceholderEntry> } {
+  let counter = 0;
+  const placeholders = new Map<number, PlaceholderEntry>();
+
+  function processNode(node: AnyNode): string {
+    if (node.type === 'text') return (node as Text).data ?? '';
+    if (node.type !== 'tag') return '';
+    const el = node as Element;
+    const tag = el.tagName?.toLowerCase() ?? '';
+    if (SKIP_TAGS.has(tag)) return '';
+
+    if (VOID_INLINE_TAGS.has(tag)) {
+      const n = ++counter;
+      placeholders.set(n, { open: `<${tag}${buildAttribString(el.attribs)}>`, close: '' });
+      return `<${n}/>`;
+    }
+
+    if (INLINE_TAGS.has(tag)) {
+      const n = ++counter;
+      placeholders.set(n, {
+        open: `<${tag}${buildAttribString(el.attribs)}>`,
+        close: `</${tag}>`,
+      });
+      const inner = ((el.children ?? []) as AnyNode[]).map(processNode).join('');
+      return `<${n}>${inner}</${n}>`;
+    }
+
+    // Nested block / unknown tag: recurse without wrapping
+    return ((el.children ?? []) as AnyNode[]).map(processNode).join('');
+  }
+
+  const text = ((blockEl.children ?? []) as AnyNode[]).map(processNode).join('').trim();
+  return { text, placeholders };
+}
+
+/** Serialises an element's attributes to a string suitable for a tag, skipping data-sl-id. */
+function buildAttribString(attribs: Record<string, string> | undefined): string {
+  if (!attribs) return '';
+  const pairs = Object.entries(attribs)
+    .filter(([k]) => k !== 'data-sl-id')
+    .map(([k, v]) => `${k}="${v.replace(/"/g, '&quot;')}"`)
+    .join(' ');
+  return pairs ? ` ${pairs}` : '';
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
