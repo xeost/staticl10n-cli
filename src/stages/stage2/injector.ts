@@ -23,6 +23,9 @@ function reconstructFromPlaceholders(
         if (entry) {
           el.name = entry.name;
           el.attribs = { ...entry.attribs };
+          if (entry.innerHTML !== undefined) {
+            $(el).html(entry.innerHTML);
+          }
         }
       }
     }

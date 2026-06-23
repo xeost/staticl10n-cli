@@ -139,7 +139,7 @@ Uses the [Google Gemini](https://ai.google.dev) REST API. Requires an API key st
 ```json
 "translation": {
   "provider": "gemini",
-  "model": "gemini-2.0-flash",
+  "model": ["gemini-2.5-flash-lite", "gemini-3.1-flash-lite"],
   "sourceLanguage": "en",
   "targetLanguages": ["es"]
 }

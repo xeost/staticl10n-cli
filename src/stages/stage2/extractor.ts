@@ -10,6 +10,8 @@ export interface PlaceholderEntry {
   attribs: Record<string, string>;
   /** Closing tag, e.g. '</a>'. Empty string for void elements. */
   close: string;
+  /** Optional original inner HTML (for atomic inline elements like svg) */
+  innerHTML?: string;
 }
 
 export interface HtmlFragment {
@@ -36,7 +38,7 @@ const BLOCK_TAGS = new Set([
   'section', 'article', 'div', 'p', 'li', 'td', 'th',
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'figcaption',
   'header', 'footer', 'main', 'aside', 'nav', 'figure',
-  'a', 'small', 'button', 'span',
+  'a', 'small', 'button', 'span', 'caption', 'dt', 'dd', 'dl', 'label',
 ]);
 
 // Tags whose full content should be excluded from translation extraction
@@ -58,7 +60,11 @@ const INLINE_TAGS = new Set([
 ]);
 
 // Void inline elements that produce self-closing placeholders: <N/>
-const VOID_INLINE_TAGS = new Set(['br', 'wbr']);
+const VOID_INLINE_TAGS = new Set(['br', 'wbr', 'img', 'input', 'embed', 'area', 'col']);
+
+// Atomic inline elements (e.g. svg, picture) that are replaced with placeholders,
+// but their children are preserved wholesale without translation.
+const ATOMIC_INLINE_TAGS = new Set(['svg', 'picture', 'canvas', 'iframe']);
 
 // Translatable attribute names
 const TRANSLATABLE_ATTRS = ['alt', 'title', 'placeholder', 'aria-label', 'aria-description'];
@@ -106,7 +112,7 @@ export function extractFragments(
 
       if (!hasBlockDescendants(el) && (ALWAYS_EXTRACT_TAGS.has(tag) || textRatio > 0.6 || hasDirectSignificantText(el)) && hasSignificantText(getTextContent($, el))) {
         // Build placeholder-mapped text and check token budget against it
-        const { text: placeholderText, placeholders } = buildPlaceholderText(el);
+        const { text: placeholderText, placeholders } = buildPlaceholderText($, el);
         const tokenCount = Math.ceil(placeholderText.length / 4);
 
         if (tokenCount <= maxFragmentTokens) {
@@ -158,6 +164,7 @@ export function extractFragments(
  * the original open/close tags are stored in the returned placeholders map.
  */
 function buildPlaceholderText(
+  $: cheerio.CheerioAPI,
   blockEl: Element,
 ): { text: string; placeholders: Map<number, PlaceholderEntry> } {
   let counter = 0;
@@ -173,6 +180,18 @@ function buildPlaceholderText(
     if (VOID_INLINE_TAGS.has(tag)) {
       const n = ++counter;
       placeholders.set(n, { name: tag, attribs: { ...el.attribs }, close: '' });
+      return `<span id="${n}"></span>`;
+    }
+
+    if (ATOMIC_INLINE_TAGS.has(tag)) {
+      const n = ++counter;
+      const innerHtml = $.html((el.children ?? []) as any);
+      placeholders.set(n, {
+        name: tag,
+        attribs: { ...el.attribs },
+        close: `</${tag}>`,
+        innerHTML: innerHtml,
+      });
       return `<span id="${n}"></span>`;
     }
 
@@ -220,9 +239,15 @@ function hasBlockDescendants(el: Element): boolean {
     if (hasBlock) return;
     if (node.type === 'tag') {
       const tag = (node as Element).tagName?.toLowerCase();
-      if (tag && !INLINE_TAGS.has(tag) && !VOID_INLINE_TAGS.has(tag)) {
-        hasBlock = true;
-        return;
+      if (tag) {
+        if (ATOMIC_INLINE_TAGS.has(tag)) {
+          // Atomic inline element: its children are preserved wholesale without translation
+          return;
+        }
+        if (!INLINE_TAGS.has(tag) && !VOID_INLINE_TAGS.has(tag)) {
+          hasBlock = true;
+          return;
+        }
       }
       ((node as Element).children as AnyNode[])?.forEach(check);
     }

@@ -212,7 +212,7 @@ async function translateBatch(
           fragmentTokens += callTokens;
           translated = callText;
 
-          if (translated && verifyPlaceholderIntegrity(translated, fragment.placeholders)) {
+          if (translated && verifyPlaceholderIntegrity(translated, fragment.outerHtml, fragment.placeholders)) {
             integrityPassed = true;
             batchInputTokens += inputTokens;
             batchOutputTokens += outputTokens;
@@ -560,6 +560,7 @@ function hasPromptLeakage(text: string): boolean {
  */
 function verifyPlaceholderIntegrity(
   translated: string,
+  originalText: string,
   placeholders: Map<number, PlaceholderEntry> | undefined,
 ): boolean {
   // Reject if the translated text contains any literal hexadecimal byte representations (e.g. <0xC2>, <0xA0>)
@@ -567,6 +568,21 @@ function verifyPlaceholderIntegrity(
   if (hexByteRegex.test(translated)) {
     logger.warn(`Integrity check failed: translation contains hex byte literal sequence (e.g. <0xXX>)`);
     return false;
+  }
+
+  // Check text expansion / contraction limit (max 60% variation allowed for texts where character diff > 10)
+  const cleanOriginal = originalText.replace(/<[^>]+>/g, '').trim();
+  const cleanTranslated = translated.replace(/<[^>]+>/g, '').trim();
+  const lenOrig = cleanOriginal.length;
+  const lenTrans = cleanTranslated.length;
+
+  if (lenOrig > 0) {
+    const diff = Math.abs(lenTrans - lenOrig);
+    if (diff > Math.max(10, lenOrig * 0.6)) {
+      const percentage = ((diff / lenOrig) * 100).toFixed(1);
+      logger.warn(`Integrity check failed: text length changed by ${percentage}% (${lenOrig} -> ${lenTrans} chars), exceeding the 60% limit (with a minimum of 10 chars difference). Original: "${cleanOriginal}", Translated: "${cleanTranslated}"`);
+      return false;
+    }
   }
 
   // Find all HTML tags in the raw translated string
