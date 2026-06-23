@@ -4,8 +4,10 @@ import type { AnyNode, Element, Text } from 'domhandler';
 // ─── HTML Fragment Extractor ──────────────────────────────────────────────────
 
 export interface PlaceholderEntry {
-  /** Opening HTML tag with all original attributes, e.g. '<a href="/docs">'. */
-  open: string;
+  /** Original tag name, e.g. 'a' or 'span' */
+  name: string;
+  /** Original attributes map */
+  attribs: Record<string, string>;
   /** Closing tag, e.g. '</a>'. Empty string for void elements. */
   close: string;
 }
@@ -170,18 +172,19 @@ function buildPlaceholderText(
 
     if (VOID_INLINE_TAGS.has(tag)) {
       const n = ++counter;
-      placeholders.set(n, { open: `<${tag}${buildAttribString(el.attribs)}>`, close: '' });
-      return `<${n}/>`;
+      placeholders.set(n, { name: tag, attribs: { ...el.attribs }, close: '' });
+      return `<span id="${n}"></span>`;
     }
 
     if (INLINE_TAGS.has(tag)) {
       const n = ++counter;
       placeholders.set(n, {
-        open: `<${tag}${buildAttribString(el.attribs)}>`,
+        name: tag,
+        attribs: { ...el.attribs },
         close: `</${tag}>`,
       });
       const inner = ((el.children ?? []) as AnyNode[]).map(processNode).join('');
-      return `<${n}>${inner}</${n}>`;
+      return `<span id="${n}">${inner}</span>`;
     }
 
     // Nested block / unknown tag: recurse without wrapping

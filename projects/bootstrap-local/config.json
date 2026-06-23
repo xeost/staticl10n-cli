@@ -25,17 +25,34 @@
   "translation": {
     "provider": "ollama",
     "ollamaUrl": "http://localhost:11434",
-    "model": ["llama3.1", "gemma4"],
+    "model": [
+      "gemma4",
+      "llama3.1"
+    ],
     "sourceLanguage": "en",
     "targetLanguages": [
       "es"
     ],
     "batchSize": 20,
     "maxFragmentTokens": 2000,
-    "maxRetries": 3,
+    "maxRetries": 7,
     "cacheExpiry": -1,
     "context": "Official documentation website for Bootstrap, a popular open-source HTML/CSS/JS front-end framework.",
-    "preserveTerms": ["Bootstrap", "Sass", "Parcel", "Webpack", "Vite", "Popper", "npm", "jsDelivr", "RFS", "Hugo", "jQuery", "Autoprefixer", "PostCSS"],
+    "preserveTerms": [
+      "Bootstrap",
+      "Sass",
+      "Parcel",
+      "Webpack",
+      "Vite",
+      "Popper",
+      "npm",
+      "jsDelivr",
+      "RFS",
+      "Hugo",
+      "jQuery",
+      "Autoprefixer",
+      "PostCSS"
+    ],
     "translateCodeBlockComments": true
   },
   "personalization": {
@@ -59,7 +76,9 @@
         "selector": "head > title",
         "search": "Bootstrap",
         "replace": "Bootstrap en Español",
-        "languages": ["es"],
+        "languages": [
+          "es"
+        ],
         "description": "Rename page titles for the Spanish translation"
       }
     ]

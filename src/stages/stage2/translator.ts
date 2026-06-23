@@ -1,5 +1,7 @@
 import * as cheerio from 'cheerio';
 import type { AnyNode, Element, Text } from 'domhandler';
+import fs from 'fs-extra';
+import path from 'path';
 import type { ProjectConfig } from '../../core/config.js';
 import { logger } from '../../utils/logger.js';
 import type { HtmlFragment, PlaceholderEntry } from './extractor.js';
@@ -68,6 +70,7 @@ export async function translateFragments(
   for (let i = 0; i < toTranslate.length; i += batchSize) {
     const batch = toTranslate.slice(i, i + batchSize);
     const results = await translateBatch(
+      projectId,
       batch,
       targetLanguage,
       config,
@@ -80,15 +83,8 @@ export async function translateFragments(
     for (const fragment of batch) {
       const translatedText = results.get(fragment.id);
       if (translatedText !== undefined) {
-        // Successful translation: store in map and persist to cache
+        // Successful translation: store in map (already persisted to cache in translateBatch)
         translatedTexts.set(fragment.id, translatedText);
-        storeCachedTranslation(
-          projectId,
-          fragment.outerHtml,
-          targetLanguage,
-          translatedText,
-          getPrimaryModel(config),
-        );
       } else {
         // Failed translation: use original as in-memory fallback only — do not cache,
         // so the fragment is retried on the next run.
@@ -108,6 +104,7 @@ export async function translateFragments(
  * callers can decide whether to cache them.
  */
 async function translateBatch(
+  projectId: number,
   fragments: HtmlFragment[],
   targetLanguage: string,
   config: ProjectConfig,
@@ -121,6 +118,13 @@ async function translateBatch(
   for (const fragment of fragments) {
     let translated: string | null = null;
     let fragmentTokens = 0;
+    const attemptsLog: Array<{
+      model: string;
+      attempt: number;
+      response: string | null;
+      error?: string;
+      integrityFailed?: boolean;
+    }> = [];
 
     modelLoop:
     for (const model of models) {
@@ -144,11 +148,23 @@ async function translateBatch(
           logger.warn(
             `Integrity check failed for fragment ${fragment.id} (model: ${model}, attempt ${attempt}/${maxRetries})`,
           );
+          attemptsLog.push({
+            model,
+            attempt,
+            response: callText,
+            integrityFailed: true,
+          });
           translated = null;
         } catch (err) {
           logger.warn(
             `LLM request failed for fragment ${fragment.id} (model: ${model}, attempt ${attempt}/${maxRetries}): ${(err as Error).message}`,
           );
+          attemptsLog.push({
+            model,
+            attempt,
+            response: null,
+            error: (err as Error).message,
+          });
           await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt - 1)));
         }
       }
@@ -159,14 +175,90 @@ async function translateBatch(
 
     if (translated) {
       results.set(fragment.id, translated);
+      // Successful translation: persist to cache immediately
+      storeCachedTranslation(
+        projectId,
+        fragment.outerHtml,
+        targetLanguage,
+        translated,
+        getPrimaryModel(config),
+      );
     } else {
       logger.warn(`Keeping original for fragment ${fragment.id} after all models failed (not cached).`);
+      writeFailureLog(projectId, fragment, targetLanguage, attemptsLog);
     }
 
     onFragmentDone?.(fragmentTokens);
   }
 
   return results;
+}
+
+/**
+ * Appends a detailed report of a translation failure (where all models and attempts failed
+ * to validate integrity or succeed) to a log file inside the logs directory.
+ */
+function writeFailureLog(
+  projectId: number,
+  fragment: HtmlFragment,
+  targetLanguage: string,
+  attemptsLog: Array<{
+    model: string;
+    attempt: number;
+    response: string | null;
+    error?: string;
+    integrityFailed?: boolean;
+  }>,
+): void {
+  try {
+    const logDir = path.join(process.cwd(), 'data', 'logs');
+    const logPath = path.join(logDir, 'translation_failures.log');
+    fs.ensureDirSync(logDir);
+
+    const timestamp = new Date().toISOString();
+    let placeholdersStr = '';
+    if (fragment.placeholders && fragment.placeholders.size > 0) {
+      placeholdersStr = Array.from(fragment.placeholders.entries())
+        .map(([n, entry]) => `  id: ${n}, tag: ${entry.name}, close: ${entry.close}, attribs: ${JSON.stringify(entry.attribs)}`)
+        .join('\n');
+    } else {
+      placeholdersStr = '  (none)';
+    }
+
+    const attemptsStr = attemptsLog
+      .map((log) => {
+        let status = '';
+        let detail = '';
+        if (log.error) {
+          status = 'ERROR';
+          detail = log.error;
+        } else if (log.integrityFailed) {
+          status = 'INTEGRITY FAILED';
+          detail = `Response: "${log.response}"`;
+        }
+        return `  - Model: ${log.model}, Attempt ${log.attempt}: [${status}] ${detail}`;
+      })
+      .join('\n');
+
+    const logEntry = `
+================================================================================
+TIMESTAMP: ${timestamp}
+PROJECT ID: ${projectId}
+TARGET LANGUAGE: ${targetLanguage}
+FRAGMENT ID: ${fragment.id}
+IS ATTRIBUTE: ${fragment.isAttribute}
+SOURCE TEXT: "${fragment.outerHtml}"
+EXPECTED PLACEHOLDERS:
+${placeholdersStr}
+ATTEMPTS HISTORY:
+${attemptsStr}
+================================================================================
+`;
+
+    fs.appendFileSync(logPath, logEntry, 'utf-8');
+  } catch (err) {
+    logger.error(`Failed to write translation failure log: ${(err as Error).message}`);
+  }
 }
 
 /**
@@ -231,15 +323,19 @@ function buildPlaceholderPrompt(text: string, sourceLang: string, targetLang: st
     ? `\n- Never translate these terms (keep them verbatim): ${config.translation.preserveTerms.join(', ')}\n`
     : '';
 
-  return `Translate the following text from ${sourceLang} to ${targetLang}.${contextLine}
+  return `You are a professional web translator. Translate the text inside the <source> tag from ${sourceLang} to ${targetLang}.${contextLine}
+CRITICAL: The text contains simplified HTML placeholder tags (like <span id="1">, </span>, <span id="2"></span>). You must keep these exact tags intact, preserve their attributes (such as id), and place them around the correct translated words to maintain correct grammar.
+
 Guidelines:
 - Use an informal, friendly tone (e.g. "tú" in Spanish, "tu" in French, "du" in German).
-- Preserve ALL placeholder tags exactly as they appear (e.g. <1>, </1>, <2/>). Place each tag around the equivalent translated words to maintain correct grammar.
-- Do NOT translate, modify, add, or remove any placeholder tags.
+- Do NOT translate, modify, add, or remove any placeholder tags or their attributes.
 - Do not translate technical terms, URLs, code, or brand names.${termsLine}
-- Reply with ONLY the translated text, nothing else.
+- Do NOT include any intro/outro commentary, notes, explanations, or warnings directed to the user. Reply with ONLY the translated text inside the <source> tag, nothing else.
 
-<source>${text}</source>`;
+<source>
+${text}
+</source>
+`;
 }
 
 /** Builds the translation prompt for a plain-text attribute value. */
@@ -308,30 +404,70 @@ function hasPromptLeakage(text: string): boolean {
 
 /**
  * Verifies that placeholder tags are preserved in the translated text.
- * Checks that every placeholder number in the original map appears
- * with matching open/close tags in the translation.
+ * Checks that every placeholder number (id attribute) and tag name
+ * appears correctly in the translation.
+ */
+/**
+ * Verifies that placeholder tags are preserved in the translated text.
+ * Checks that every placeholder number (id attribute) and tag name
+ * appears correctly in the translation.
  */
 function verifyPlaceholderIntegrity(
   translated: string,
   placeholders: Map<number, PlaceholderEntry> | undefined,
 ): boolean {
-  if (!placeholders || placeholders.size === 0) return !hasPromptLeakage(translated);
+  // Reject if the translated text contains any literal hexadecimal byte representations (e.g. <0xC2>, <0xA0>)
+  const hexByteRegex = /<0x[0-9a-fA-F]{2}>/i;
+  if (hexByteRegex.test(translated)) {
+    logger.warn(`Integrity check failed: translation contains hex byte literal sequence (e.g. <0xXX>)`);
+    return false;
+  }
 
-  for (const [n, entry] of placeholders) {
-    const openTag = `<${n}>`;
-    const closeTag = `</${n}>`;
-    const voidTag = `<${n}/>`;
+  const $ = cheerio.load(translated);
 
-    const hasOpen = translated.includes(openTag);
-    const hasClose = translated.includes(closeTag);
-    const hasVoid = translated.includes(voidTag);
+  // 1. Strict tag structure validation:
+  // Every tag node in the parsed body must be a 'span' element and have a valid 'id' attribute matching one of our expected placeholder IDs.
+  let isValidStructure = true;
+  $('body *').each((_i, el) => {
+    if (el.type === 'tag') {
+      const tag = el.tagName.toLowerCase();
+      if (tag !== 'span') {
+        logger.warn(`Integrity check failed: translation contains forbidden tag <${tag}>`);
+        isValidStructure = false;
+        return false; // break each
+      }
+      const idAttr = $(el).attr('id');
+      if (!idAttr) {
+        logger.warn(`Integrity check failed: translation contains a <span> tag without an id attribute`);
+        isValidStructure = false;
+        return false; // break each
+      }
+      const n = parseInt(idAttr, 10);
+      if (isNaN(n) || !placeholders || !placeholders.has(n)) {
+        logger.warn(`Integrity check failed: translation contains unexpected placeholder id="${idAttr}"`);
+        isValidStructure = false;
+        return false; // break each
+      }
+    }
+  });
 
-    if (entry.close === '') {
-      // Void element: expect <N/>
-      if (!hasVoid) return false;
-    } else {
-      // Paired element: expect both <N> and </N>
-      if (!hasOpen || !hasClose) return false;
+  if (!isValidStructure) return false;
+
+  // 2. Strict presence validation:
+  // Every expected placeholder in the map must exist in the translated response.
+  if (placeholders && placeholders.size > 0) {
+    for (const [n] of placeholders) {
+      const el = $(`body [id="${n}"]`);
+      if (el.length === 0) {
+        logger.warn(`Integrity check failed: missing expected placeholder id="${n}"`);
+        return false;
+      }
+    }
+  } else {
+    // If no placeholders are expected, the output should not contain any tags.
+    if ($('body *').length > 0) {
+      logger.warn(`Integrity check failed: contains tags but none were expected`);
+      return false;
     }
   }
 

@@ -12,21 +12,23 @@ function reconstructFromPlaceholders(
   translated: string,
   placeholders: Map<number, PlaceholderEntry>,
 ): string {
-  let result = translated;
-  for (const [n, entry] of placeholders) {
-    const openTag = `<${n}>`;
-    const closeTag = `</${n}>`;
-    const voidTag = `<${n}/>`;
+  const $ = cheerio.load(translated);
 
-    if (entry.close === '') {
-      // Void element: replace <N/> with original open tag (no close)
-      result = result.replace(voidTag, entry.open);
-    } else {
-      // Paired element: replace <N> with open, </N> with close
-      result = result.replace(openTag, entry.open).replace(closeTag, entry.close);
+  $('[id]').each((_i, el) => {
+    if (el.type === 'tag') {
+      const idAttr = $(el).attr('id');
+      if (idAttr) {
+        const n = parseInt(idAttr, 10);
+        const entry = placeholders.get(n);
+        if (entry) {
+          el.name = entry.name;
+          el.attribs = { ...entry.attribs };
+        }
+      }
     }
-  }
-  return result;
+  });
+
+  return $('body').html() ?? translated;
 }
 
 /**
