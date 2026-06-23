@@ -70,15 +70,25 @@ export async function translateFragments(
   let pageInputTokens = 0;
   let pageOutputTokens = 0;
   let pageTotalTokens = 0;
+  let pageRetries = 0;
+  let pageFailedCount = 0;
 
   // Group fragments into batches
   const batchSize = config.translation.batchSize;
   for (let i = 0; i < toTranslate.length; i += batchSize) {
     const batch = toTranslate.slice(i, i + batchSize);
-    const { results, inputTokens: batchIn, outputTokens: batchOut, totalTokens: batchTotal } = await translateBatch(
+    const {
+      results,
+      inputTokens: batchIn,
+      outputTokens: batchOut,
+      totalTokens: batchTotal,
+      retries: batchRetries,
+      failedCount: batchFailed,
+    } = await translateBatch(
       projectId,
       pagePath,
       batch,
+      fragments,
       targetLanguage,
       config,
       (fragTokens) => {
@@ -90,6 +100,8 @@ export async function translateFragments(
     pageInputTokens += batchIn;
     pageOutputTokens += batchOut;
     pageTotalTokens += batchTotal;
+    pageRetries += batchRetries;
+    pageFailedCount += batchFailed;
 
     for (const fragment of batch) {
       const translatedText = results.get(fragment.id);
@@ -108,11 +120,14 @@ export async function translateFragments(
     writeDebugPageSummary({
       projectSlug: config.slug,
       pagePath,
+      language: targetLanguage,
       model: getPrimaryModel(config),
       inputTokens: pageInputTokens,
       outputTokens: pageOutputTokens,
       totalTokens: pageTotalTokens,
       durationMs: Date.now() - startTime,
+      retries: pageRetries,
+      failedCount: pageFailedCount,
     });
   }
 
@@ -129,22 +144,33 @@ export async function translateFragments(
 async function translateBatch(
   projectId: number,
   pagePath: string,
-  fragments: HtmlFragment[],
+  batch: HtmlFragment[],
+  allFragments: HtmlFragment[],
   targetLanguage: string,
   config: ProjectConfig,
   onFragmentDone?: (tokens: number) => void,
-): Promise<{ results: Map<string, string>; inputTokens: number; outputTokens: number; totalTokens: number }> {
+): Promise<{
+  results: Map<string, string>;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  retries: number;
+  failedCount: number;
+}> {
   const results = new Map<string, string>();
   let batchInputTokens = 0;
   let batchOutputTokens = 0;
   let batchTotalTokens = 0;
+  let batchRetries = 0;
+  let batchFailedCount = 0;
 
   const models = getModels(config);
   const maxRetries = config.translation.maxRetries ?? 5;
 
-  for (const fragment of fragments) {
+  for (const fragment of batch) {
     let translated: string | null = null;
     let fragmentTokens = 0;
+    let fragmentLlmCalls = 0;
     const attemptsLog: Array<{
       model: string;
       attempt: number;
@@ -153,9 +179,13 @@ async function translateBatch(
       integrityFailed?: boolean;
     }> = [];
 
+    const fragmentIndex = allFragments.indexOf(fragment) + 1;
+    const indexStr = `${fragmentIndex}/${allFragments.length} fragments`;
+
     modelLoop:
     for (const model of models) {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        fragmentLlmCalls++;
         const startTime = Date.now();
         let callText: string | null = null;
         let inputTokens = 0;
@@ -191,6 +221,8 @@ async function translateBatch(
             writeDebugAttemptLog({
               projectSlug: config.slug,
               pagePath,
+              language: targetLanguage,
+              indexStr,
               fragmentId: fragment.id,
               model,
               attempt,
@@ -199,7 +231,6 @@ async function translateBatch(
               totalTokens: callTokens,
               durationMs: Date.now() - startTime,
               status: 'SUCCESS',
-              integrityPassed: true,
               prompt: promptText,
               response: callText,
             });
@@ -216,6 +247,8 @@ async function translateBatch(
           writeDebugAttemptLog({
             projectSlug: config.slug,
             pagePath,
+            language: targetLanguage,
+            indexStr,
             fragmentId: fragment.id,
             model,
             attempt,
@@ -223,8 +256,7 @@ async function translateBatch(
             outputTokens,
             totalTokens: callTokens,
             durationMs: Date.now() - startTime,
-            status: 'FAILED',
-            integrityPassed: false,
+            status: 'INTEGRITY_FAILED',
             prompt: promptText,
             response: callText ?? '',
           });
@@ -243,6 +275,8 @@ async function translateBatch(
           writeDebugAttemptLog({
             projectSlug: config.slug,
             pagePath,
+            language: targetLanguage,
+            indexStr,
             fragmentId: fragment.id,
             model,
             attempt,
@@ -250,8 +284,7 @@ async function translateBatch(
             outputTokens: 0,
             totalTokens: 0,
             durationMs: Date.now() - startTime,
-            status: 'FAILED',
-            integrityPassed: false,
+            status: 'ERROR',
             prompt: promptText || (fragment.isAttribute ? buildAttributePrompt(fragment.outerHtml, config.translation.sourceLanguage, targetLanguage, config) : buildPlaceholderPrompt(fragment.outerHtml, config.translation.sourceLanguage, targetLanguage, config)),
             response: `[ERROR] ${errorMsg}`,
           });
@@ -269,6 +302,8 @@ async function translateBatch(
       }
     }
 
+    batchRetries += Math.max(0, fragmentLlmCalls - 1);
+
     if (translated) {
       results.set(fragment.id, translated);
       // Successful translation: persist to cache immediately
@@ -280,6 +315,7 @@ async function translateBatch(
         getPrimaryModel(config),
       );
     } else {
+      batchFailedCount++;
       logger.warn(`Keeping original for fragment ${fragment.id} after all models failed (not cached).`);
       writeFailureLog(projectId, fragment, targetLanguage, attemptsLog);
     }
@@ -287,7 +323,14 @@ async function translateBatch(
     onFragmentDone?.(fragmentTokens);
   }
 
-  return { results, inputTokens: batchInputTokens, outputTokens: batchOutputTokens, totalTokens: batchTotalTokens };
+  return {
+    results,
+    inputTokens: batchInputTokens,
+    outputTokens: batchOutputTokens,
+    totalTokens: batchTotalTokens,
+    retries: batchRetries,
+    failedCount: batchFailedCount,
+  };
 }
 
 /**
@@ -421,20 +464,19 @@ async function callOllama(
 /** Builds the translation prompt for a block fragment using placeholder notation. */
 function buildPlaceholderPrompt(text: string, sourceLang: string, targetLang: string, config: ProjectConfig): string {
   const contextLine = config.translation.context
-    ? `\nContext: ${config.translation.context}\n`
+    ? `\nContext: You are translating the ${config.translation.context}\n`
     : '';
   const termsLine = config.translation.preserveTerms?.length
     ? `\n- Never translate these terms (keep them verbatim): ${config.translation.preserveTerms.join(', ')}\n`
     : '';
 
   return `You are a professional web translator. Translate the text inside the <source> tag from ${sourceLang} to ${targetLang}.${contextLine}
-CRITICAL: The text contains simplified HTML placeholder tags (like <span id="1">, </span>, <span id="2"></span>). You must keep these exact tags intact, preserve their attributes (such as id), and place them around the correct translated words to maintain correct grammar.
 
 Guidelines:
 - Use an informal, friendly tone (e.g. "tú" in Spanish, "tu" in French, "du" in German).
 - Do NOT translate, modify, add, or remove any placeholder tags or their attributes.
 - Do not translate technical terms, URLs, code, or brand names.${termsLine}
-- Do NOT include any intro/outro commentary, notes, explanations, or warnings directed to the user. Reply with ONLY the translated text inside the <source> tag, nothing else.
+- Do NOT wrap your response in <source> tags, and do NOT include the opening <source> or closing </source> tags in your output. Reply with ONLY the raw translated text, containing only the span placeholders, and absolutely nothing else. Do NOT include any introductory or concluding messages, notes, commentary, explanations, warnings, or responses directed to me.
 
 <source>
 ${text}
@@ -448,7 +490,7 @@ function buildAttributePrompt(text: string, sourceLang: string, targetLang: stri
     ? ` Never translate: ${config.translation.preserveTerms.join(', ')}.`
     : '';
 
-  return `Translate the text inside the <source> tags from ${sourceLang} to ${targetLang}. Use a professional and friendly tone with the informal form of address. Do not translate technical terms, URLs, or brand names.${terms} Do NOT include notes, explanations, or comments. Reply with only the translated text, nothing else.
+  return `Translate the text inside the <source> tags from ${sourceLang} to ${targetLang}. Use a professional and friendly tone with the informal form of address. Do not translate technical terms, URLs, or brand names.${terms} Do NOT include notes, explanations, or comments. Reply with only the translated text, nothing else. Do NOT wrap your response in <source> tags, and do NOT include the opening <source> or closing </source> tags. Do NOT include any introductory or concluding messages, notes, commentary, explanations, warnings, or responses directed to me.
 
 <source>${text}</source>`;
 }
@@ -527,9 +569,43 @@ function verifyPlaceholderIntegrity(
     return false;
   }
 
+  // Find all HTML tags in the raw translated string
+  const allTags = translated.match(/<[^>]+>/g) || [];
+
+  // 1. All tags must be valid span tags: either <span ...> or </span>
+  const openingSpanRegex = /^<span\b[^>]*>$/i;
+  const closingSpanRegex = /^<\/span>$/i;
+
+  let countOpening = 0;
+  let countClosing = 0;
+
+  for (const tag of allTags) {
+    if (openingSpanRegex.test(tag)) {
+      countOpening++;
+    } else if (closingSpanRegex.test(tag)) {
+      countClosing++;
+    } else {
+      logger.warn(`Integrity check failed: translation contains forbidden tag/markup: "${tag}"`);
+      return false;
+    }
+  }
+
+  // 2. Count of opening and closing spans must be equal
+  if (countOpening !== countClosing) {
+    logger.warn(`Integrity check failed: unbalanced span tags. Opening: ${countOpening}, Closing: ${countClosing}`);
+    return false;
+  }
+
+  // 3. Count must match expected placeholders count exactly
+  const expectedCount = placeholders ? placeholders.size : 0;
+  if (countOpening !== expectedCount) {
+    logger.warn(`Integrity check failed: tag count (${countOpening}) does not match expected placeholder count (${expectedCount})`);
+    return false;
+  }
+
   const $ = cheerio.load(translated);
 
-  // 1. Strict tag structure validation:
+  // 4. Strict tag structure validation:
   // Every tag node in the parsed body must be a 'span' element and have a valid 'id' attribute matching one of our expected placeholder IDs.
   let isValidStructure = true;
   $('body *').each((_i, el) => {
@@ -557,7 +633,7 @@ function verifyPlaceholderIntegrity(
 
   if (!isValidStructure) return false;
 
-  // 2. Strict presence validation:
+  // 5. Strict presence validation:
   // Every expected placeholder in the map must exist in the translated response.
   if (placeholders && placeholders.size > 0) {
     for (const [n] of placeholders) {
@@ -926,6 +1002,8 @@ function getDebugLogPath(): string | null {
 interface DebugAttemptInput {
   projectSlug: string;
   pagePath: string;
+  language: string;
+  indexStr: string;
   fragmentId: string;
   model: string;
   attempt: number;
@@ -933,8 +1011,7 @@ interface DebugAttemptInput {
   outputTokens: number;
   totalTokens: number;
   durationMs: number;
-  status: 'SUCCESS' | 'FAILED';
-  integrityPassed: boolean;
+  status: 'SUCCESS' | 'INTEGRITY_FAILED' | 'ERROR';
   prompt: string;
   response: string;
 }
@@ -949,12 +1026,13 @@ function writeDebugAttemptLog(input: DebugAttemptInput): void {
   const entry = `
 ================================================================================
 PROJECT: ${input.projectSlug}
+LANGUAGE: ${input.language}
 PAGE PATH: ${input.pagePath}
+FRAGMENT: ${input.indexStr}
 FRAGMENT ID: ${input.fragmentId}
 MODEL USED: ${input.model}
 RETRY NUMBER: ${input.attempt}
 STATUS: ${input.status}
-INTEGRITY PASSED: ${input.integrityPassed}
 DURATION: ${input.durationMs}ms
 TOKENS: Input: ${input.inputTokens} | Output: ${input.outputTokens} | Total: ${input.totalTokens}
 
@@ -971,11 +1049,14 @@ ${input.response}
 interface DebugPageSummaryInput {
   projectSlug: string;
   pagePath: string;
+  language: string;
   model: string;
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
   durationMs: number;
+  retries: number;
+  failedCount: number;
 }
 
 /**
@@ -990,10 +1071,13 @@ function writeDebugPageSummary(input: DebugPageSummaryInput): void {
 ######################### PAGE TRANSLATION COMPLETE ############################
 ################################################################################
 PROJECT: ${input.projectSlug}
+LANGUAGE: ${input.language}
 PAGE PATH: ${input.pagePath}
 MODEL USED: ${input.model}
 TOTAL TIME TAKEN: ${input.durationMs}ms
 TOTAL TOKENS: Input: ${input.inputTokens} | Output: ${input.outputTokens} | Total: ${input.totalTokens}
+TOTAL RETRIES: ${input.retries}
+FAILED FRAGMENTS (EXHAUSTED): ${input.failedCount}
 ################################################################################
 ################################################################################
 `;
