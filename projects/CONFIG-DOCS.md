@@ -1,112 +1,125 @@
 # Project Configuration Reference
 
-Each project has a `config.json` file inside its folder under `projects/<slug>/config.json`. This document is the full reference for every available option.
+Each project has a `config.yaml` file inside its folder under `projects/<slug>/config.yaml`. This document is the full reference for every available option.
 
 ## Full example
 
-```jsonc
-{
-  "name": "My Project",
-  "slug": "my-project",
-  "url": "https://example.com",
+```yaml
+# Display name of the project (shown in the interactive UI)
+name: My Project
 
-  // URLs where each translation will be deployed (used for hreflang tags)
-  "targetUrls": {
-    "es": "https://es.example.com",
-    "fr": "https://fr.example.com"
-  },
+# Unique identifier — also used as the folder name under projects/
+slug: my-project
 
-  "siteType": "generic",   // "generic" | "nextjs"
+# URL of the source site to crawl and translate
+url: https://example.com
 
-  "crawl": {
-    "delayMs": 1500,         // milliseconds between requests
-    "delayJitterMs": 500,    // random extra delay to avoid detection
-    "maxPages": 500,
-    // Blocklist mode: skip paths that contain any of these strings (default)
-    "ignorePatterns": ["/api/", "/admin/"],
-    // Allowlist mode: ONLY crawl paths that contain at least one of these strings
-    // Mutually exclusive with ignorePatterns — use one or the other, not both.
-    // "allowPatterns": ["/en/"],
-    "normalizeTrailingSlash": true,
-    "stripQueryParams": true,
-    "postHydrationDelayMs": 800  // ms to wait after hydration (Next.js sites)
-  },
+# Deployed URLs for each translated language (used to generate hreflang tags and rewrite links)
+targetUrls:
+  es: https://es.example.com
+  fr: https://fr.example.com
 
-  "paths": {
-    "original": "/data/my-project/original",  // processed + pre-personalized HTML
-    "raw": "/data/my-project/raw",            // raw Playwright HTML (for reprocessing)
-    "translations": {
-      "es": "/data/my-project/es",
-      "fr": "/data/my-project/fr"
-    }
-  },
+# Site type: "generic" (Hugo, Astro, VitePress, Jekyll…) or "nextjs" (Next.js app with React hydration)
+siteType: generic
 
-  "translation": {
-    "provider": "ollama",              // "ollama" | "gemini"
-    "ollamaUrl": "http://localhost:11434",  // only required for provider "ollama"
-    "model": ["gemma4", "gemma3:8b"],  // array = multi-model fallback (or a single string)
-    "sourceLanguage": "en",
-    "targetLanguages": ["es", "fr"],
-    "batchSize": 20,           // fragments per Ollama API call
-    "maxFragmentTokens": 2000, // max tokens per HTML fragment before splitting
-    "maxRetries": 5,           // retries per model before moving to the next one (default: 5)
-    "cacheExpiry": -1,         // -1 = no expiry | 0 = cache disabled | N = TTL in seconds
-    "context": "Official docs for Bootstrap, a CSS/JS framework",  // injected into prompt
-    "preserveTerms": ["Parcel", "Webpack", "Vite", "Sass"],        // terms never translated
-    "translateCodeBlockComments": true  // translate comment spans inside <pre><code> blocks (default: true)
-  },
+crawl:
+  # Milliseconds to wait between page requests (reduces server load)
+  delayMs: 1500
+  # Additional random delay per request (helps avoid bot detection)
+  delayJitterMs: 500
+  # Maximum number of pages to crawl (set to a high value to crawl everything)
+  maxPages: 500
+  # Blocklist mode: skip URLs whose pathname contains any of these strings
+  ignorePatterns: ["/api/", "/admin/"]
+  # Allowlist mode: ONLY crawl paths that contain at least one of these strings
+  # Mutually exclusive with ignorePatterns — use one or the other, not both.
+  # allowPatterns: ["/en/"]
+  # Strip trailing slashes from crawled URLs for consistent deduplication
+  normalizeTrailingSlash: true
+  # Remove query parameters from crawled URLs (keeps ?lang=, ?v=... out of the page list)
+  stripQueryParams: true
+  # Extra delay (ms) after page hydration — increase for JS-heavy sites like Next.js
+  postHydrationDelayMs: 800
 
-  "personalization": {
-    // Applied at end of Stage 1, BEFORE translation
-    "preTranslation": [
-      {
-        "type": "remove_element",
-        "selector": "script[src*='google-analytics']",
-        "description": "Remove Google Analytics"
-      }
-    ],
-    // Applied in Stage 3, AFTER translation
-    "postTranslation": [
-      {
-        "type": "inject_html",
-        "position": "body_end",
-        "html": "<div id='my-banner'>Ad content</div>",
-        "description": "Inject ad banner"
-      },
-      {
-        "type": "replace_text",
-        "search": "© 2024 Original Company",
-        "replace": "© 2024 My Company",
-        "description": "Replace copyright (all directories)"
-      },
-      {
-        "type": "replace_text",
-        "selector": "title",
-        "search": "Acme",
-        "replace": "Acme en Español",
-        "languages": ["es"],
-        "description": "Rename page titles in the Spanish output only"
-      }
-    ]
-  },
+paths:
+  # Where processed + pre-personalized HTML files are saved (Stage 1 output)
+  original: /data/my-project/original
+  # Where raw Playwright HTML is saved (used for reprocessing without re-crawling)
+  raw: /data/my-project/raw
+  # Output directories per target language
+  translations:
+    es: /data/my-project/es
+    fr: /data/my-project/fr
 
-  "copyAssetsMode": "copy",  // "copy" | "symlink"
+translation:
+  # Translation provider: "ollama" (local, no API key) or "gemini" (Google Gemini API)
+  provider: ollama
+  # Base URL of the local Ollama server (only used when provider is "ollama")
+  ollamaUrl: "http://localhost:11434"
+  # Model name or list of models for multi-model fallback (tried in order on failure)
+  # Comment out any model to temporarily disable it
+  model:
+    - gemma4
+    - gemma3:8b
+  # Language code of the source content (ISO 639-1, e.g. "en", "es", "fr")
+  sourceLanguage: en
+  # Target languages to translate into (must match keys in targetUrls and paths.translations)
+  targetLanguages: ["es", "fr"]
+  # Number of HTML fragments sent to the model in a single API call
+  batchSize: 20
+  # Maximum token count per HTML fragment before it is split into smaller pieces
+  maxFragmentTokens: 2000
+  # Retries per model before moving to the next one in the list (default: 5)
+  maxRetries: 5
+  # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
+  cacheExpiry: -1
+  # Optional context injected into the translation prompt (describe the site for better accuracy)
+  context: "Official docs for Bootstrap, a CSS/JS framework"
+  # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
+  preserveTerms: ["Parcel", "Webpack", "Vite", "Sass"]
+  # Set to true to translate comment spans inside <pre><code> blocks (default: true)
+  translateCodeBlockComments: true
 
-  // Optional: rewrite URL pathnames at output time (output files, links, sitemap, hreflang).
-  // Useful when crawling a language-prefixed version of a site but publishing without the prefix.
-  "pathRewrite": [
-    { "pattern": "^/en/", "replacement": "/" }
-  ],
+personalization:
+  # Rules applied at the end of Stage 1, BEFORE translation
+  # Use to remove analytics, tracking scripts, cookie banners, ads, etc.
+  preTranslation:
+    - type: remove_element
+      selector: "script[src*='google-analytics']"
+      description: Remove Google Analytics
+  # Rules applied in Stage 3, AFTER translation
+  # Use to inject banners, replace copyright text, rename page titles, etc.
+  # Add "languages: [es, fr]" to a rule to restrict it to specific language outputs.
+  postTranslation:
+    - type: inject_html
+      position: body_end
+      html: "<div id='my-banner'>Ad content</div>"
+      description: Inject ad banner
+    - type: replace_text
+      search: "© 2024 Original Company"
+      replace: "© 2024 My Company"
+      description: Replace copyright (all directories)
+    - type: replace_text
+      selector: title
+      search: Acme
+      replace: Acme en Español
+      languages: ["es"]
+      description: Rename page titles in the Spanish output only
 
-  // Optional: map sibling-project domains to their translated equivalents (per language).
-  // Links in translated HTML pointing to a key domain are rewritten to the value for the
-  // current target language.
-  "domainMap": {
-    "https://docs.astro.build": {
-      "es": "https://astro-docs.esdocu.com"
-    }
-  }
-}
+# How to handle static assets (CSS, JS, images, fonts): "copy" (default) or "symlink"
+copyAssetsMode: copy
+
+# Optional: regex rules to rewrite URL pathnames at output time (output files, links, sitemap, hreflang).
+# Useful when crawling a language-prefixed site (e.g. /en/…) but publishing without the prefix.
+pathRewrite:
+  - pattern: "^/en/"
+    replacement: "/"
+
+# Optional: map sibling-project domains to their translated equivalents (per language).
+# Links in translated HTML pointing to a mapped domain are rewritten to the target language URL.
+domainMap:
+  "https://docs.astro.build":
+    es: https://astro-docs.esdocu.com
 ```
 
 ---
@@ -119,14 +132,16 @@ The `translation.provider` field selects which LLM backend is used. Two provider
 
 Runs translations through a locally-installed [Ollama](https://ollama.com) instance. No internet connection or API key is needed.
 
-```json
-"translation": {
-  "provider": "ollama",
-  "ollamaUrl": "http://localhost:11434",
-  "model": ["llama3.1", "gemma4"],
-  "sourceLanguage": "en",
-  "targetLanguages": ["es"]
-}
+```yaml
+translation:
+  provider: ollama
+  ollamaUrl: "http://localhost:11434"
+  # Comment out any model to temporarily disable it
+  model:
+    - llama3.1
+    - gemma4
+  sourceLanguage: en
+  targetLanguages: ["es"]
 ```
 
 - `ollamaUrl` — base URL of the Ollama server. Required when using this provider.
@@ -136,13 +151,15 @@ Runs translations through a locally-installed [Ollama](https://ollama.com) insta
 
 Uses the [Google Gemini](https://ai.google.dev) REST API. Requires an API key stored in the `.env` file (see [Environment variables](#environment-variables)).
 
-```json
-"translation": {
-  "provider": "gemini",
-  "model": ["gemini-2.5-flash-lite", "gemini-3.1-flash-lite"],
-  "sourceLanguage": "en",
-  "targetLanguages": ["es"]
-}
+```yaml
+translation:
+  provider: gemini
+  # Comment out any model to temporarily disable it
+  model:
+    - gemini-2.5-flash-lite
+    - gemini-3.1-flash-lite
+  sourceLanguage: en
+  targetLanguages: ["es"]
 ```
 
 - `ollamaUrl` — not used; omit it.
@@ -200,10 +217,9 @@ The `crawl` object supports two mutually exclusive URL filter modes. Use **one o
 
 Crawl all discovered URLs **except** those whose pathname contains at least one of the listed strings.
 
-```json
-"crawl": {
-  "ignorePatterns": ["/blog/", "/api/", "/fr/", "/de/"]
-}
+```yaml
+crawl:
+  ignorePatterns: ["/blog/", "/api/", "/fr/", "/de/"]
 ```
 
 All paths are visited unless they match a blocked prefix/substring.
@@ -212,21 +228,20 @@ All paths are visited unless they match a blocked prefix/substring.
 
 Crawl **only** URLs whose pathname contains at least one of the listed strings. Everything else is silently skipped.
 
-```json
-"crawl": {
-  "allowPatterns": ["/en/"]
-}
+```yaml
+crawl:
+  allowPatterns: ["/en/"]
 ```
 
 Useful when the source site serves multiple language versions under different path prefixes (e.g. `/en/`, `/fr/`, `/de/`) and you only want to translate one of them. Combined with `pathRewrite`, you can strip the language prefix from the translated output:
 
-```json
-"crawl": {
-  "allowPatterns": ["/en/"]
-},
-"pathRewrite": [
-  { "pattern": "^/en/", "replacement": "/" }
-]
+```yaml
+crawl:
+  allowPatterns: ["/en/"]
+
+pathRewrite:
+  - pattern: "^/en/"
+    replacement: "/"
 ```
 
 This crawls only `/en/…` pages and publishes them at `/…` on the translated site.
@@ -248,10 +263,10 @@ Rewrites are applied to:
 
 Sites like `https://docs.astro.build` serve their canonical English content under `/en/…`. If you only want to crawl and translate the English content but publish it at the root of your translated domain (e.g. `https://astro-es.example.com/getting-started/` instead of `.../en/getting-started/`), add:
 
-```json
-"pathRewrite": [
-  { "pattern": "^/en/", "replacement": "/" }
-]
+```yaml
+pathRewrite:
+  - pattern: "^/en/"
+    replacement: "/"
 ```
 
 This leaves non-English source paths (if any are accidentally crawled) untouched since the pattern only matches paths that start with `/en/`.
@@ -277,24 +292,20 @@ Each site is a separate staticl10n project. To make cross-site links point to th
 
 **In the `astro.build` project config:**
 
-```json
-"domainMap": {
-  "https://docs.astro.build": {
-    "es": "https://astro-docs.esdocu.com",
-    "fr": "https://astro-docs.frdocu.com"
-  }
-}
+```yaml
+domainMap:
+  "https://docs.astro.build":
+    es: https://astro-docs.esdocu.com
+    fr: https://astro-docs.frdocu.com
 ```
 
 **In the `docs.astro.build` project config:**
 
-```json
-"domainMap": {
-  "https://astro.build": {
-    "es": "https://astro.esdocu.com",
-    "fr": "https://astro.frdocu.com"
-  }
-}
+```yaml
+domainMap:
+  "https://astro.build":
+    es: https://astro.esdocu.com
+    fr: https://astro.frdocu.com
 ```
 
 With this configuration, a link like `<a href="https://docs.astro.build/en/getting-started/">` in the Spanish translation of the main site will become `<a href="https://astro-docs.esdocu.com/en/getting-started/">`, while the French translation will point to `https://astro-docs.frdocu.com/en/getting-started/`.

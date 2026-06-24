@@ -129,7 +129,7 @@ Go to **Manage projects → Create new project** and fill in:
 - **Site type** — `generic` or `nextjs`
 - **Output base directory** — absolute path where static files will be saved, e.g. `/data/my-project`
 
-The project config is saved to `projects/<slug>/config.json`. Edit it directly or use **Edit project config** to open it in `$EDITOR`.
+The project config is saved to `projects/<slug>/config.yaml`. Edit it directly or use **Edit project config** to open it in `$EDITOR`.
 
 ### 3. Run the workflow
 
@@ -232,7 +232,7 @@ The test wizard asks three questions and then runs:
    - Images and links still work (relative paths resolved).
    - Personalization rules applied as expected.
    - For Next.js sites: the `translations.js` patch is present and the page does not flicker.
-4. Adjust `config.json` rules or translation settings as needed.
+4. Adjust `config.yaml` rules or translation settings as needed.
 5. Once satisfied, run the full workflow from Stage 1.
 
 > **Note:** Pages captured in test mode count towards the project's page database just like a normal crawl. You can inspect them from **Stage 1 → View captured pages** at any time.
@@ -257,7 +257,7 @@ To prevent unwanted pages from being imported and captured, the URL detection pr
 
 ## Project Configuration
 
-Each project has a `config.json` file at `projects/<slug>/config.json`. The full reference — including all options, crawl filter modes, path rewriting, cross-project domain mapping, and personalization rules — is documented in:
+Each project has a `config.yaml` file at `projects/<slug>/config.yaml`. The full reference — including all options, crawl filter modes, path rewriting, cross-project domain mapping, and personalization rules — is documented in:
 
 **[→ projects/CONFIG-DOCS.md](projects/CONFIG-DOCS.md)**
 

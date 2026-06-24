@@ -1,0 +1,97 @@
+# Display name of the project (shown in the interactive UI)
+name: TailwindCSS Local
+
+# Unique identifier — also used as the folder name under projects/
+slug: tailwindcss-local
+
+# URL of the source site to crawl and translate
+url: "http://localhost:3002"
+
+# Deployed URLs for each translated language (used to generate hreflang tags and rewrite links)
+targetUrls:
+  es: https://tailwindcss.esdocu.com
+
+# Site type: "generic" (Hugo, Astro, VitePress, Jekyll…) or "nextjs" (Next.js app with React hydration)
+siteType: nextjs
+
+crawl:
+  # Milliseconds to wait between page requests (reduces server load)
+  delayMs: 10
+  # Additional random delay per request (helps avoid bot detection)
+  delayJitterMs: 500
+  # Maximum number of pages to crawl (set to a high value to crawl everything)
+  maxPages: 500
+  # Blocklist mode: skip URLs whose pathname contains any of these strings
+  # Use this to exclude sections like /blog/, /api/, /admin/, other language prefixes, etc.
+  ignorePatterns: ["/blog", "/plus"]
+  # Strip trailing slashes from crawled URLs for consistent deduplication
+  normalizeTrailingSlash: true
+  # Remove query parameters from crawled URLs (keeps ?lang=, ?v=... out of the page list)
+  stripQueryParams: true
+  # Extra delay (ms) after page hydration — increase for JS-heavy sites like Next.js
+  postHydrationDelayMs: 800
+
+paths:
+  # Where processed + pre-personalized HTML files are saved (Stage 1 output)
+  original: /Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/tailwindcss-local/original
+  # Where raw Playwright HTML is saved (used for reprocessing without re-crawling)
+  raw: /Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/tailwindcss-local/raw
+  # Output directories per target language
+  translations:
+      es: /Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/tailwindcss-local/es
+
+translation:
+  # Translation provider: "ollama" (local, no API key) or "gemini" (Google Gemini API)
+  provider: ollama
+  # Base URL of the local Ollama server (only used when provider is "ollama")
+  ollamaUrl: "http://localhost:11434"
+  # Model name or list of models for multi-model fallback (tried in order on failure)
+  # Comment out any model to temporarily disable it
+  model:
+    - llama3.1
+    - gemma4
+  # Language code of the source content (ISO 639-1, e.g. "en", "es", "fr")
+  sourceLanguage: en
+  # Target languages to translate into (must match keys in targetUrls and paths.translations)
+  targetLanguages: ["es"]
+  # Number of HTML fragments sent to the model in a single API call
+  batchSize: 20
+  # Maximum token count per HTML fragment before it is split into smaller pieces
+  maxFragmentTokens: 1200
+  # Retries per model before moving to the next one in the list (default: 3)
+  maxRetries: 5
+  # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
+  cacheExpiry: -1
+  # Optional context injected into the translation prompt (describe the site for better accuracy)
+  context: "Official documentation website for Tailwind CSS, a utility-first CSS framework."
+  # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
+  preserveTerms: ["Tailwind", "Tailwind CSS", "CSS", "HTML", "JavaScript", "TypeScript", "npm", "Vite", "PostCSS", "Autoprefixer", "PurgeCSS", "JIT", "CDN", "IntelliSense", "VSCode", "Prettier", "ESLint", "Sass", "SCSS", "React", "Vue", "Svelte", "Next.js", "Nuxt", "Laravel", "Rails", "Django"]
+  # Set to false to skip translation of comment spans inside <pre><code> blocks
+  translateCodeBlockComments: false
+
+personalization:
+  # Rules applied at the end of Stage 1, BEFORE translation
+  # Use to remove analytics, tracking scripts, cookie banners, ads, etc.
+  preTranslation: []
+  # Rules applied in Stage 3, AFTER translation
+  # Use to inject banners, replace copyright text, rename page titles, etc.
+  # Add "languages: [es, fr]" to a rule to restrict it to specific language outputs.
+  postTranslation:
+    - type: replace_text
+      selector: "head > title"
+      search: Tailwind CSS
+      replace: Tailwind CSS en Español
+      languages: ["es"]
+      description: Rename page titles for the Spanish translation
+
+# How to handle static assets (CSS, JS, images, fonts): "copy" (default) or "symlink"
+copyAssetsMode: copy
+
+# Optional: regex rules to rewrite URL pathnames at output time (output files, links, sitemap, hreflang).
+# Useful when crawling a language-prefixed site (e.g. /en/…) but publishing without the prefix.
+# Example: { pattern: "^/en/", replacement: "/" } → /en/getting-started/ becomes /getting-started/
+pathRewrite: []
+
+# Optional: map sibling-project domains to their translated equivalents (per language).
+# Links in translated HTML pointing to a mapped domain are rewritten to the target language URL.
+domainMap: {}
