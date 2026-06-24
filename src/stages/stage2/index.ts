@@ -22,6 +22,7 @@ import { rewriteLinks } from './linkRewriter.js';
 import { processMeta } from './meta.js';
 import { generateSitemap } from './sitemap.js';
 import { translateCodeComments, translateFragments, translateJsonLdValues } from './translator.js';
+import { applyRule } from '../stage1/personalizer.js';
 
 // ─── Stage 2 Orchestrator ─────────────────────────────────────────────────────
 
@@ -263,6 +264,134 @@ export async function translateProject(
   }
 
   return { pagesTranslated, pagesFailed, cacheHits: totalCacheHits, cacheMisses: totalCacheMisses };
+}
+
+// ─── Post-Processing Reapplication ────────────────────────────────────────────
+
+export interface ReapplyResult {
+  pagesProcessed: number;
+  pagesFailed: number;
+}
+
+/**
+ * Re-applies all post-translation processing steps to already-translated pages
+ * without re-running the translation itself. Useful when config changes
+ * (pathRewrite, domainMap, postTranslation rules) need to be applied to existing
+ * translated HTML files.
+ *
+ * Steps per page/language:
+ *  1. Reads the translated HTML from disk.
+ *  2. Re-applies rewriteLinks() (handles domainMap + pathRewrite for <a href>).
+ *  3. Refreshes the <html lang> attribute and hreflang <link> tags.
+ *  4. Re-applies postTranslation personalization rules.
+ *  5. Writes the updated HTML back to the output path.
+ *
+ * Also regenerates sitemap.xml for each language.
+ */
+export async function reapplyPostProcessing(
+  projectSlug: string,
+  config: ProjectConfig,
+  targetLanguages?: string[],
+  targetPageUrl?: string,
+): Promise<ReapplyResult> {
+  const project = dbGetProjectBySlug(projectSlug);
+  if (!project) throw new Error(`Project "${projectSlug}" not found`);
+
+  const languages = targetLanguages ?? config.translation.targetLanguages;
+  const postRules = config.personalization.postTranslation;
+
+  let pagesProcessed = 0;
+  let pagesFailed = 0;
+
+  for (const lang of languages) {
+    const outputDir = config.paths.translations[lang];
+    if (!outputDir) {
+      logger.warn(`No output path configured for language: ${lang}`);
+      continue;
+    }
+
+    // Fetch all translated pages from the DB for this language
+    let translatedPages = dbGetTranslatedPages(project.id, lang);
+    if (targetPageUrl) {
+      translatedPages = translatedPages.filter((p) => p.url === targetPageUrl);
+    }
+
+    if (translatedPages.length === 0) {
+      logger.info(`No translated pages found for language: ${lang}`);
+      continue;
+    }
+
+    // Build the full translated URL set for accurate link rewriting
+    const allTranslatedUrls = dbGetTranslatedPageUrls(project.id, lang);
+    const translatedUrlSet = buildTranslatedUrlSet(allTranslatedUrls, config);
+
+    for (const page of translatedPages) {
+      const outputPath = rewritePath(page.path, config.pathRewrite);
+      const outputHtmlPath = path.join(outputDir, outputPath);
+
+      if (!fs.existsSync(outputHtmlPath)) {
+        logger.warn(`Translated file not found, skipping: ${outputHtmlPath}`);
+        continue;
+      }
+
+      try {
+        let html = fs.readFileSync(outputHtmlPath, 'utf-8');
+
+        // Re-apply link rewriting (domainMap + pathRewrite for <a href>)
+        html = rewriteLinks(html, page.url, lang, config, translatedUrlSet);
+
+        // Refresh <html lang> attribute and hreflang <link> tags
+        // (Remove existing hreflang links and re-inject with current config/pathRewrite)
+        const $meta = cheerio.load(html);
+        $meta('html').attr('lang', lang);
+        $meta('link[hreflang]').remove();
+        const pagePath = new URL(page.url).pathname;
+        const rewrittenPagePath = rewritePath(pagePath, config.pathRewrite);
+        $meta('head').append(
+          `<link rel="alternate" hreflang="${config.translation.sourceLanguage}" href="${config.url}${pagePath}" />`,
+        );
+        for (const [hrefLang, baseUrl] of Object.entries(config.targetUrls)) {
+          const normalizedBase = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`;
+          $meta('head').append(
+            `<link rel="alternate" hreflang="${hrefLang}" href="${normalizedBase}${rewrittenPagePath}" />`,
+          );
+        }
+        $meta('head').append(
+          `<link rel="alternate" hreflang="x-default" href="${config.url}${pagePath}" />`,
+        );
+        html = $meta.html();
+
+        // Re-apply postTranslation personalization rules
+        if (postRules.length > 0) {
+          const $rules = cheerio.load(html);
+          for (const rule of postRules) {
+            // Skip rules restricted to other languages
+            if (rule.languages && !rule.languages.includes(lang)) continue;
+            applyRule($rules, rule);
+          }
+          html = $rules.html();
+        }
+
+        // Write the updated HTML back to disk
+        fs.ensureDirSync(path.dirname(outputHtmlPath));
+        fs.writeFileSync(outputHtmlPath, html, 'utf-8');
+        pagesProcessed++;
+        logger.debug(`Re-applied post-processing [${lang}]: ${page.url}`);
+      } catch (err) {
+        logger.warn(`Failed to re-apply post-processing [${lang}] ${page.url}: ${(err as Error).message}`);
+        pagesFailed++;
+      }
+    }
+
+    // Regenerate sitemap.xml for this language
+    const allUrls = dbGetTranslatedPageUrls(project.id, lang);
+    if (allUrls.length > 0) {
+      generateSitemap(outputDir, config.url, config.targetUrls[lang] ?? '', allUrls, config.pathRewrite);
+      logger.debug(`Sitemap regenerated: ${outputDir}/sitemap.xml (${allUrls.length} URLs)`);
+    }
+  }
+
+  return { pagesProcessed, pagesFailed };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -42,7 +42,7 @@ The result is one independent static directory per language, ready to be deploye
 ## System Requirements
 
 | Requirement | Version | Notes |
-|---|---|---|
+| --- | --- | --- |
 | **Node.js** | 20 LTS or later | Uses native `fetch`, ESM modules |
 | **pnpm** | 8 or later | `npm install -g pnpm` |
 | **Playwright browsers** | Chromium | Installed automatically via `pnpm exec playwright install chromium` |
@@ -105,7 +105,7 @@ staticl10n
 
 You will see the main menu:
 
-```
+```text
   ╔═══════════════════════════════════════╗
   ║          staticl10n  v0.1.0           ║
   ║     Static Localization CLI Tool      ║
@@ -135,7 +135,7 @@ The project config is saved to `projects/<slug>/config.yaml`. Edit it directly o
 
 Select the project as active, then execute each stage in order:
 
-```
+```text
 Stage 1: Capture
   → Detect URLs: Stage 1 (Discover & Save) # crawls and saves paths to temporary file
   → Detect URLs: Stage 2 (Import paths)    # imports verified paths from the file
@@ -147,6 +147,7 @@ Stage 2: Translation
 
 Stage 3: Post-Personalization
   → Apply post-personalization rules  # injects your banners, replaces copyright, etc.
+  → Re-apply post-processing          # reapplies link rewriting, hreflang updates, rules
 
 Stage 4: Monitoring  (ongoing)
   → Check site for changes
@@ -162,7 +163,7 @@ Before processing an entire site, use the **⚡ Test: process single page** opti
 
 From the main interactive menu, with a project already selected:
 
-```
+```text
 ? Main Menu
   ...
   ─────── Active project ───────
@@ -184,7 +185,7 @@ The test wizard asks three questions and then runs:
 3. **Stages to run** — individual stages can be toggled on/off:
 
 | Stage | What runs |
-|---|---|
+| --- | --- |
 | **Stage 1: Capture** | Opens the page with Playwright, applies the site adapter, downloads assets, saves to `original/` |
 | **Stage 1b: Pre-personalization** | Applies `preTranslation` rules to the captured HTML (remove trackers, cookie banners, etc.) |
 | **Stage 2: Translation** | Extracts translatable fragments, queries Ollama, injects translations into each language directory |
@@ -192,7 +193,7 @@ The test wizard asks three questions and then runs:
 
 ### Example output
 
-```
+```text
   ⚡ Single-Page Test Mode
   Runs the full pipeline on a single URL so you can verify the output
   without processing the whole site.
@@ -265,7 +266,7 @@ Each project has a `config.yaml` file at `projects/<slug>/config.yaml`. The full
 
 ## Output Directory Structure
 
-```
+```text
 /data/my-project/
 ├── raw/                        ← Raw Playwright HTML (pre-adapter)
 │   ├── index.html
@@ -342,7 +343,7 @@ During the crawl (Stage 1), staticl10n intercepts HTTP 3xx responses via Playwri
 Under **Stage 1: Capture** in the interactive menu:
 
 | Option | Description |
-|---|---|
+| --- | --- |
 | **View detected redirects** | Lists all entries from `redirects.json` with status codes |
 | **Regenerate _redirects file** | Re-generates `_redirects` in `original/` and all language directories from the current `redirects.json` |
 
@@ -412,7 +413,7 @@ The Next.js adapter handles several complexities automatically:
 All state is stored in `data/staticl10n.db` (SQLite). Tables:
 
 | Table | Purpose |
-|---|---|
+| --- | --- |
 | `projects` | Registered projects |
 | `pages` | Discovered URLs with crawl/capture status |
 | `page_translations` | Translation status per page per language |

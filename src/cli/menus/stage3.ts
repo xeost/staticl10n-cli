@@ -3,6 +3,7 @@ import inquirer from 'inquirer';
 import ora from 'ora';
 import type { ProjectConfig } from '../../core/config.js';
 import { applyPostPersonalization, listPostRules } from '../../stages/stage3/rules.js';
+import { reapplyPostProcessing } from '../../stages/stage2/index.js';
 import { logger } from '../../utils/logger.js';
 import { clearScreen, printStageHeader, promptSelect } from '../ui.js';
 
@@ -18,6 +19,8 @@ export async function stage3Menu(projectSlug: string, config: ProjectConfig): Pr
         { name: 'Apply post-personalization rules', value: 'apply' },
         { name: 'Preview rules (dry-run)', value: 'dry' },
         { name: 'View configured rules', value: 'view' },
+        { name: 'Re-apply post-processing to all pages', value: 'reapply-all' },
+        { name: 'Re-apply post-processing to a specific language', value: 'reapply-lang' },
         { name: '← Back', value: 'back' },
       ],
       config.name,
@@ -44,6 +47,12 @@ export async function stage3Menu(projectSlug: string, config: ProjectConfig): Pr
         break;
       case 'view':
         viewRules(config);
+        break;
+      case 'reapply-all':
+        await runReapplyPostProcessing(projectSlug, config);
+        break;
+      case 'reapply-lang':
+        await runReapplyPostProcessingLanguage(projectSlug, config);
         break;
     }
   }
@@ -90,4 +99,39 @@ function viewRules(config: ProjectConfig): void {
     if (rule.selector) console.log(`     Selector: ${chalk.gray(rule.selector)}`);
     if (rule.html) console.log(`     HTML: ${chalk.gray(rule.html.slice(0, 60))}...`);
   });
+}
+
+async function runReapplyPostProcessing(
+  projectSlug: string,
+  config: ProjectConfig,
+  languages?: string[],
+): Promise<void> {
+  const spinner = ora('Re-applying post-processing...').start();
+  try {
+    const result = await reapplyPostProcessing(projectSlug, config, languages);
+    spinner.stop();
+    logger.success('Post-processing reapplication complete.');
+    logger.info(`Pages processed: ${result.pagesProcessed}`);
+    if (result.pagesFailed > 0) {
+      logger.warn(`Pages failed: ${result.pagesFailed}`);
+    }
+  } catch (err) {
+    spinner.stop();
+    logger.error(`Post-processing reapplication failed: ${(err as Error).message}`);
+  }
+}
+
+async function runReapplyPostProcessingLanguage(
+  projectSlug: string,
+  config: ProjectConfig,
+): Promise<void> {
+  const lang = await promptSelect(
+    'Select target language',
+    config.translation.targetLanguages.map((l) => ({ name: l, value: l })),
+    config.name,
+  );
+
+  if (lang === 'clear') return;
+
+  await runReapplyPostProcessing(projectSlug, config, [lang]);
 }

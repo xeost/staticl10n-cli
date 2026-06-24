@@ -622,7 +622,7 @@ function verifyPlaceholderIntegrity(
 
     if (diff > limit) {
       const percentage = ((diff / lenOrig) * 100).toFixed(1);
-      const reason = `text length changed by ${percentage}% (${lenOrig} -> ${lenTrans} chars), exceeding the ${maxPercentage}% limit (with a minimum of ${isExpansion ? 40 : 15} chars difference). Original: "${cleanOriginal}", Translated: "${cleanTranslated}"`;
+      const reason = `text length changed by ${percentage}% (${lenOrig} -> ${lenTrans} chars), exceeding the ${maxPercentage}% limit (with a minimum of ${isExpansion ? 40 : 15} chars difference). Original: ${lenOrig} chars, Translated: ${lenTrans} chars`;
       logWarning(reason);
       return { passed: false, reason };
     }
