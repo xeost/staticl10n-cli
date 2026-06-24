@@ -48,6 +48,7 @@ translation:
   # Model name or list of models for multi-model fallback (tried in order on failure)
   # Comment out any model to temporarily disable it
   model:
+    # - llama3.1
     - gemma3:12b
     - gemma4
   # Language code of the source content (ISO 639-1, e.g. "en", "es", "fr")
@@ -59,13 +60,34 @@ translation:
   # Maximum token count per HTML fragment before it is split into smaller pieces
   maxFragmentTokens: 2000
   # Retries per model before moving to the next one in the list (default: 3)
-  maxRetries: 3
+  maxRetries: 5
   # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
   cacheExpiry: -1
   # Optional context injected into the translation prompt (describe the site for better accuracy)
-  context: ""
+  context: "Official website for Astro, a modern web framework for building fast, content-focused websites with less client-side JavaScript."
   # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
-  preserveTerms: []
+  preserveTerms:
+    - Astro
+    - JavaScript
+    - TypeScript
+    - HTML
+    - CSS
+    - npm
+    - pnpm
+    - Node.js
+    - Vite
+    - React
+    - Vue
+    - Svelte
+    - Solid
+    - Preact
+    - Lit
+    - Alpine.js
+    - HTMX
+    - Tailwind
+    - MDX
+    - Markdown
+    - GitHub
   # Set to true to translate comment spans inside <pre><code> blocks (default: true)
   translateCodeBlockComments: true
 
