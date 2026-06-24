@@ -40,7 +40,7 @@ export async function translateFragments(
   fragments: HtmlFragment[],
   targetLanguage: string,
   config: ProjectConfig,
-  onFragmentProgress?: (done: number, total: number, tokens: number) => void,
+  onFragmentProgress?: (done: number, total: number, tokens: number, fragmentId: string) => void,
 ): Promise<TranslationBatch> {
   const translatedTexts = new Map<string, string>();
   const toTranslate: HtmlFragment[] = [];
@@ -55,7 +55,7 @@ export async function translateFragments(
     if (cached !== null) {
       translatedTexts.set(fragment.id, cached);
       cacheHits++;
-      onFragmentProgress?.(++fragmentsDone, fragments.length, totalTokens);
+      onFragmentProgress?.(++fragmentsDone, fragments.length, totalTokens, fragment.id);
     } else {
       toTranslate.push(fragment);
       cacheMisses++;
@@ -91,9 +91,12 @@ export async function translateFragments(
       fragments,
       targetLanguage,
       config,
-      (fragTokens) => {
+      (fragTokens, fragmentId) => {
         totalTokens += fragTokens;
-        onFragmentProgress?.(++fragmentsDone, fragments.length, totalTokens);
+        onFragmentProgress?.(++fragmentsDone, fragments.length, totalTokens, fragmentId);
+      },
+      (fragmentId) => {
+        onFragmentProgress?.(fragmentsDone, fragments.length, totalTokens, fragmentId);
       },
     );
 
@@ -148,7 +151,8 @@ async function translateBatch(
   allFragments: HtmlFragment[],
   targetLanguage: string,
   config: ProjectConfig,
-  onFragmentDone?: (tokens: number) => void,
+  onFragmentDone?: (tokens: number, fragmentId: string) => void,
+  onFragmentStart?: (fragmentId: string) => void,
 ): Promise<{
   results: Map<string, string>;
   inputTokens: number;
@@ -168,6 +172,7 @@ async function translateBatch(
   const maxRetries = config.translation.maxRetries ?? 5;
 
   for (const fragment of batch) {
+    onFragmentStart?.(fragment.id);
     let translated: string | null = null;
     let fragmentTokens = 0;
     let fragmentLlmCalls = 0;
@@ -181,6 +186,16 @@ async function translateBatch(
 
     const fragmentIndex = allFragments.indexOf(fragment) + 1;
     const indexStr = `${fragmentIndex}/${allFragments.length} fragments`;
+
+    let hasLoggedSeparatorForFragment = false;
+    const ensureSeparator = () => {
+      if (!hasLoggedSeparatorForFragment) {
+        const header = `─── Fragment ${fragment.id} `;
+        const line = header + '─'.repeat(Math.max(0, 70 - header.length));
+        logger.warn(line);
+        hasLoggedSeparatorForFragment = true;
+      }
+    };
 
     modelLoop:
     for (const model of models) {
@@ -212,7 +227,11 @@ async function translateBatch(
           fragmentTokens += callTokens;
           translated = callText;
 
-          if (translated && verifyPlaceholderIntegrity(translated, fragment.outerHtml, fragment.placeholders)) {
+          const integrityResult = translated
+            ? verifyPlaceholderIntegrity(translated, fragment.outerHtml, fragment.placeholders, ensureSeparator)
+            : { passed: false, reason: 'translation output was empty' };
+
+          if (translated && integrityResult.passed) {
             integrityPassed = true;
             batchInputTokens += inputTokens;
             batchOutputTokens += outputTokens;
@@ -237,8 +256,9 @@ async function translateBatch(
             break modelLoop;
           }
 
+          ensureSeparator();
           logger.warn(
-            `Integrity check failed for fragment ${fragment.id} (model: ${model}, attempt ${attempt}/${maxRetries})`,
+            `Integrity check failed for fragment ${fragment.id} (model: ${model}, attempt ${attempt}/${maxRetries}): ${integrityResult.reason ?? 'unknown reason'}`,
           );
           batchInputTokens += inputTokens;
           batchOutputTokens += outputTokens;
@@ -259,6 +279,7 @@ async function translateBatch(
             status: 'INTEGRITY_FAILED',
             prompt: promptText,
             response: callText ?? '',
+            reason: integrityResult.reason,
           });
           attemptsLog.push({
             model,
@@ -269,6 +290,7 @@ async function translateBatch(
           translated = null;
         } catch (err) {
           errorMsg = (err as Error).message;
+          ensureSeparator();
           logger.warn(
             `LLM request failed for fragment ${fragment.id} (model: ${model}, attempt ${attempt}/${maxRetries}): ${errorMsg}`,
           );
@@ -287,6 +309,7 @@ async function translateBatch(
             status: 'ERROR',
             prompt: promptText || (fragment.isAttribute ? buildAttributePrompt(fragment.outerHtml, config.translation.sourceLanguage, targetLanguage, config) : buildPlaceholderPrompt(fragment.outerHtml, config.translation.sourceLanguage, targetLanguage, config)),
             response: `[ERROR] ${errorMsg}`,
+            reason: errorMsg,
           });
           attemptsLog.push({
             model,
@@ -298,6 +321,7 @@ async function translateBatch(
         }
       }
       if (translated === null && models.indexOf(model) < models.length - 1) {
+        ensureSeparator();
         logger.warn(`Model "${model}" exhausted for fragment ${fragment.id}, trying next model...`);
       }
     }
@@ -314,13 +338,20 @@ async function translateBatch(
         translated,
         getPrimaryModel(config),
       );
+      if (hasLoggedSeparatorForFragment) {
+        logger.warn(`SUCCESS: fragment ${fragment.id} translated successfully`);
+      }
     } else {
       batchFailedCount++;
+      ensureSeparator();
+      if (hasLoggedSeparatorForFragment) {
+        logger.warn(`FAILED: fragment ${fragment.id} failed to translate (kept original)`);
+      }
       logger.warn(`Keeping original for fragment ${fragment.id} after all models failed (not cached).`);
       writeFailureLog(projectId, fragment, targetLanguage, attemptsLog);
     }
 
-    onFragmentDone?.(fragmentTokens);
+    onFragmentDone?.(fragmentTokens, fragment.id);
   }
 
   return {
@@ -562,15 +593,22 @@ function verifyPlaceholderIntegrity(
   translated: string,
   originalText: string,
   placeholders: Map<number, PlaceholderEntry> | undefined,
-): boolean {
+  onWarning?: () => void,
+): { passed: boolean; reason?: string } {
+  const logWarning = (reason: string) => {
+    onWarning?.();
+    logger.warn(`Integrity check failed: ${reason}`);
+  };
+
   // Reject if the translated text contains any literal hexadecimal byte representations (e.g. <0xC2>, <0xA0>)
   const hexByteRegex = /<0x[0-9a-fA-F]{2}>/i;
   if (hexByteRegex.test(translated)) {
-    logger.warn(`Integrity check failed: translation contains hex byte literal sequence (e.g. <0xXX>)`);
-    return false;
+    const reason = `translation contains hex byte literal sequence (e.g. <0xXX>)`;
+    logWarning(reason);
+    return { passed: false, reason };
   }
 
-  // Check text expansion / contraction limit (max 80% variation allowed for texts where character diff > 10)
+  // Check text expansion / contraction limit
   const cleanOriginal = originalText.replace(/<[^>]+>/g, '').trim();
   const cleanTranslated = translated.replace(/<[^>]+>/g, '').trim();
   const lenOrig = cleanOriginal.length;
@@ -578,10 +616,15 @@ function verifyPlaceholderIntegrity(
 
   if (lenOrig > 0) {
     const diff = Math.abs(lenTrans - lenOrig);
-    if (diff > Math.max(10, lenOrig * 0.8)) {
+    const isExpansion = lenTrans > lenOrig;
+    const limit = isExpansion ? Math.max(40, lenOrig * 1.5) : Math.max(15, lenOrig * 0.8);
+    const maxPercentage = isExpansion ? 150 : 80;
+
+    if (diff > limit) {
       const percentage = ((diff / lenOrig) * 100).toFixed(1);
-      logger.warn(`Integrity check failed: text length changed by ${percentage}% (${lenOrig} -> ${lenTrans} chars), exceeding the 80% limit (with a minimum of 10 chars difference). Original: "${cleanOriginal}", Translated: "${cleanTranslated}"`);
-      return false;
+      const reason = `text length changed by ${percentage}% (${lenOrig} -> ${lenTrans} chars), exceeding the ${maxPercentage}% limit (with a minimum of ${isExpansion ? 40 : 15} chars difference). Original: "${cleanOriginal}", Translated: "${cleanTranslated}"`;
+      logWarning(reason);
+      return { passed: false, reason };
     }
   }
 
@@ -601,22 +644,25 @@ function verifyPlaceholderIntegrity(
     } else if (closingSpanRegex.test(tag)) {
       countClosing++;
     } else {
-      logger.warn(`Integrity check failed: translation contains forbidden tag/markup: "${tag}"`);
-      return false;
+      const reason = `translation contains forbidden tag/markup: "${tag}"`;
+      logWarning(reason);
+      return { passed: false, reason };
     }
   }
 
   // 2. Count of opening and closing spans must be equal
   if (countOpening !== countClosing) {
-    logger.warn(`Integrity check failed: unbalanced span tags. Opening: ${countOpening}, Closing: ${countClosing}`);
-    return false;
+    const reason = `unbalanced span tags. Opening: ${countOpening}, Closing: ${countClosing}`;
+    logWarning(reason);
+    return { passed: false, reason };
   }
 
   // 3. Count must match expected placeholders count exactly
   const expectedCount = placeholders ? placeholders.size : 0;
   if (countOpening !== expectedCount) {
-    logger.warn(`Integrity check failed: tag count (${countOpening}) does not match expected placeholder count (${expectedCount})`);
-    return false;
+    const reason = `tag count (${countOpening}) does not match expected placeholder count (${expectedCount})`;
+    logWarning(reason);
+    return { passed: false, reason };
   }
 
   const $ = cheerio.load(translated);
@@ -624,23 +670,27 @@ function verifyPlaceholderIntegrity(
   // 4. Strict tag structure validation:
   // Every tag node in the parsed body must be a 'span' element and have a valid 'id' attribute matching one of our expected placeholder IDs.
   let isValidStructure = true;
+  let structureReason = '';
   $('body *').each((_i, el) => {
     if (el.type === 'tag') {
       const tag = el.tagName.toLowerCase();
       if (tag !== 'span') {
-        logger.warn(`Integrity check failed: translation contains forbidden tag <${tag}>`);
+        structureReason = `translation contains forbidden tag <${tag}>`;
+        logWarning(structureReason);
         isValidStructure = false;
         return false; // break each
       }
       const idAttr = $(el).attr('id');
       if (!idAttr) {
-        logger.warn(`Integrity check failed: translation contains a <span> tag without an id attribute`);
+        structureReason = `translation contains a <span> tag without an id attribute`;
+        logWarning(structureReason);
         isValidStructure = false;
         return false; // break each
       }
       const n = parseInt(idAttr, 10);
       if (isNaN(n) || !placeholders || !placeholders.has(n)) {
-        logger.warn(`Integrity check failed: translation contains unexpected placeholder id="${idAttr}"`);
+        structureReason = `translation contains unexpected placeholder id="${idAttr}"`;
+        logWarning(structureReason);
         isValidStructure = false;
         return false; // break each
       }
@@ -651,7 +701,8 @@ function verifyPlaceholderIntegrity(
         if (isVoid || isAtomic) {
           const innerText = $(el).text().trim();
           if (innerText.length > 0) {
-            logger.warn(`Integrity check failed: placeholder id="${idAttr}" is void/atomic and must remain empty, but contains text: "${innerText}"`);
+            structureReason = `placeholder id="${idAttr}" is void/atomic and must remain empty, but contains text: "${innerText}"`;
+            logWarning(structureReason);
             isValidStructure = false;
             return false; // break each
           }
@@ -660,7 +711,7 @@ function verifyPlaceholderIntegrity(
     }
   });
 
-  if (!isValidStructure) return false;
+  if (!isValidStructure) return { passed: false, reason: structureReason };
 
   // 5. Strict presence validation:
   // Every expected placeholder in the map must exist in the translated response.
@@ -668,19 +719,27 @@ function verifyPlaceholderIntegrity(
     for (const [n] of placeholders) {
       const el = $(`body [id="${n}"]`);
       if (el.length === 0) {
-        logger.warn(`Integrity check failed: missing expected placeholder id="${n}"`);
-        return false;
+        const reason = `missing expected placeholder id="${n}"`;
+        logWarning(reason);
+        return { passed: false, reason };
       }
     }
   } else {
     // If no placeholders are expected, the output should not contain any tags.
     if ($('body *').length > 0) {
-      logger.warn(`Integrity check failed: contains tags but none were expected`);
-      return false;
+      const reason = `contains tags but none were expected`;
+      logWarning(reason);
+      return { passed: false, reason };
     }
   }
 
-  return !hasPromptLeakage(translated);
+  if (hasPromptLeakage(translated)) {
+    const reason = `potential prompt leakage detected in translation`;
+    logWarning(reason);
+    return { passed: false, reason };
+  }
+
+  return { passed: true };
 }
 
 // ─── Code Comment Translator ─────────────────────────────────────────────────
@@ -1043,6 +1102,7 @@ interface DebugAttemptInput {
   status: 'SUCCESS' | 'INTEGRITY_FAILED' | 'ERROR';
   prompt: string;
   response: string;
+  reason?: string;
 }
 
 /**
@@ -1052,6 +1112,7 @@ function writeDebugAttemptLog(input: DebugAttemptInput): void {
   const logPath = getDebugLogPath();
   if (!logPath) return;
 
+  const reasonLine = input.reason ? `REASON: ${input.reason}\n` : '';
   const entry = `
 ================================================================================
 PROJECT: ${input.projectSlug}
@@ -1062,7 +1123,7 @@ FRAGMENT ID: ${input.fragmentId}
 MODEL USED: ${input.model}
 RETRY NUMBER: ${input.attempt}
 STATUS: ${input.status}
-DURATION: ${input.durationMs}ms
+${reasonLine}DURATION: ${input.durationMs}ms
 TOKENS: Input: ${input.inputTokens} | Output: ${input.outputTokens} | Total: ${input.totalTokens}
 
 --- PROMPT SENT ---

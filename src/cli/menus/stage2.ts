@@ -153,14 +153,16 @@ async function runTranslation(
   let currentFragmentsTotal = 0;
   let currentUrl = '';
   let currentLang = '';
+  let currentFragmentId = '';
 
   const timerInterval = setInterval(() => {
     if (currentFragmentsTotal > 0) {
       const elapsed = Date.now() - pageStart;
       const estimations = formatEstimations(elapsed, currentFragmentsDone, currentFragmentsTotal);
+      const fragIdStr = currentFragmentId ? ` (${currentFragmentId})` : '';
       bar.update(barDone, {
         url: currentUrl ? `[${currentLang}] ${currentUrl.slice(-50)}` : '',
-        fragment: `${currentFragmentsDone}/${currentFragmentsTotal} fragments`,
+        fragment: `${currentFragmentsDone}/${currentFragmentsTotal} fragments${fragIdStr}`,
         elapsed: formatElapsed(elapsed) + estimations,
         tokens: formatTokens(grandTotalTokens)
       });
@@ -179,18 +181,20 @@ async function runTranslation(
         currentPagePrevTokens = 0;
         currentFragmentsDone = 0;
         currentFragmentsTotal = 0;
+        currentFragmentId = '';
         currentUrl = url;
         currentLang = lang;
         bar.update(done, { url: `[${lang}] ${url.slice(-50)}`, fragment: '-', elapsed: '0.0s', tokens: formatTokens(grandTotalTokens) });
       },
-      (done, fragmentTotal, tokens, _url, _lang) => {
+      (done, fragmentTotal, tokens, _url, _lang, fragmentId) => {
         grandTotalTokens += tokens - currentPagePrevTokens;
         currentPagePrevTokens = tokens;
         currentFragmentsDone = done;
         currentFragmentsTotal = fragmentTotal;
+        currentFragmentId = fragmentId;
         const elapsed = Date.now() - pageStart;
         const estimations = formatEstimations(elapsed, done, fragmentTotal);
-        bar.update(barDone, { fragment: `${done}/${fragmentTotal} fragments`, elapsed: formatElapsed(elapsed) + estimations, tokens: formatTokens(grandTotalTokens) });
+        bar.update(barDone, { fragment: `${done}/${fragmentTotal} fragments (${fragmentId})`, elapsed: formatElapsed(elapsed) + estimations, tokens: formatTokens(grandTotalTokens) });
       },
     );
     bar.stop();

@@ -6,6 +6,7 @@ import {
   dbGetPagesByProject,
   dbGetProjectBySlug,
   dbGetTranslatedPageUrls,
+  dbGetTranslatedPages,
   dbUpsertPageTranslation,
 } from '../../core/db.js';
 import { logger } from '../../utils/logger.js';
@@ -42,7 +43,7 @@ export async function translateProject(
   targetLanguages?: string[],
   targetPageUrl?: string,
   onProgress?: (url: string, lang: string, done: number, total: number) => void,
-  onFragmentProgress?: (done: number, total: number, tokens: number, url: string, lang: string) => void,
+  onFragmentProgress?: (done: number, total: number, tokens: number, url: string, lang: string, fragmentId: string) => void,
 ): Promise<TranslationResult> {
   const project = dbGetProjectBySlug(projectSlug);
   if (!project) throw new Error(`Project "${projectSlug}" not found`);
@@ -62,7 +63,8 @@ export async function translateProject(
   const translatedUrlSets = new Map<string, Set<string>>();
   for (const lang of languages) {
     const dbTranslated = dbGetTranslatedPageUrls(project.id, lang);
-    translatedUrlSets.set(lang, new Set([...dbTranslated, ...currentRunUrlSet]));
+    const combinedUrls = new Set([...dbTranslated, ...currentRunUrlSet]);
+    translatedUrlSets.set(lang, buildTranslatedUrlSet(combinedUrls, config));
   }
 
   const total = pages.length * languages.length;
@@ -103,7 +105,7 @@ export async function translateProject(
           lang,
           config,
           onFragmentProgress
-            ? (done, total, tokens) => onFragmentProgress(done, total, tokens, pageRow.url, lang)
+            ? (done, total, tokens, fragmentId) => onFragmentProgress(done, total, tokens, pageRow.url, lang, fragmentId)
             : undefined,
         );
         totalCacheHits += cacheHits;
@@ -210,6 +212,45 @@ export async function translateProject(
     }
   }
 
+  // Retroactively update links in previously translated pages that are not in the current run
+  for (const lang of languages) {
+    const outputDir = config.paths.translations[lang];
+    if (!outputDir) continue;
+
+    const allTranslatedPages = dbGetTranslatedPages(project.id, lang);
+    const finalTranslatedUrlSet = buildTranslatedUrlSet(allTranslatedPages.map((p) => p.url), config);
+
+    const pagesToUpdate = allTranslatedPages.filter((p) => !currentRunUrlSet.has(p.url));
+
+    for (const page of pagesToUpdate) {
+      const outputPath = rewritePath(page.path, config.pathRewrite);
+      const outputHtmlPath = path.join(outputDir, outputPath);
+      if (!fs.existsSync(outputHtmlPath)) {
+        continue;
+      }
+
+      try {
+        const html = fs.readFileSync(outputHtmlPath, 'utf-8');
+        const updatedHtml = rewriteLinks(
+          html,
+          page.url,
+          lang,
+          config,
+          finalTranslatedUrlSet,
+        );
+
+        if (updatedHtml !== html) {
+          fs.writeFileSync(outputHtmlPath, updatedHtml, 'utf-8');
+          logger.debug(`Updated links in previously translated page [${lang}]: ${page.url}`);
+        }
+      } catch (err) {
+        logger.warn(
+          `Failed to update links in previously translated page [${lang}] ${page.url}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
   // Generate sitemap.xml for each language using ALL translated pages in the DB
   for (const lang of languages) {
     const outputDir = config.paths.translations[lang];
@@ -222,6 +263,40 @@ export async function translateProject(
   }
 
   return { pagesTranslated, pagesFailed, cacheHits: totalCacheHits, cacheMisses: totalCacheMisses };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function buildTranslatedUrlSet(urls: Iterable<string>, config: ProjectConfig): Set<string> {
+  const set = new Set<string>();
+  const originalOrigin = new URL(config.url).origin;
+  const normalizeSlash = config.crawl.normalizeTrailingSlash;
+
+  for (const url of urls) {
+    try {
+      const u = new URL(url);
+      
+      // 1. Original normalized URL
+      let p1 = u.pathname;
+      if (normalizeSlash && p1.endsWith('/') && p1 !== '/') {
+        p1 = p1.slice(0, -1);
+      }
+      set.add(originalOrigin + p1);
+      
+      // 2. Rewritten normalized URL (if different)
+      const rewrittenPath = rewritePath(u.pathname, config.pathRewrite);
+      if (rewrittenPath !== u.pathname) {
+        let p2 = rewrittenPath;
+        if (normalizeSlash && p2.endsWith('/') && p2 !== '/') {
+          p2 = p2.slice(0, -1);
+        }
+        set.add(originalOrigin + p2);
+      }
+    } catch {
+      // Skip invalid URLs
+    }
+  }
+  return set;
 }
 
 // ─── Asset Sync ───────────────────────────────────────────────────────────────

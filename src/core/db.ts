@@ -294,6 +294,17 @@ export function dbGetTranslatedPageUrls(projectId: number, language: string): st
   ).map((r) => r.url);
 }
 
+/** Returns the URL and path of all pages that have been successfully translated for a given language. */
+export function dbGetTranslatedPages(projectId: number, language: string): { url: string; path: string }[] {
+  return getDb()
+    .prepare(
+      `SELECT p.url, p.path FROM pages p
+       JOIN page_translations pt ON pt.page_id = p.id
+       WHERE p.project_id = ? AND pt.language = ? AND pt.status = 'translated'`,
+    )
+    .all(projectId, language) as { url: string; path: string }[];
+}
+
 // ─── Translation Cache ────────────────────────────────────────────────────────
 
 export interface CacheRow {

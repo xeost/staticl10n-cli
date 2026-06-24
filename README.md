@@ -107,8 +107,8 @@ You will see the main menu:
 
 ```
   ╔═══════════════════════════════════════╗
-  ║         staticl10n  v0.1.0           ║
-  ║   Static Localization CLI Tool       ║
+  ║          staticl10n  v0.1.0           ║
+  ║     Static Localization CLI Tool      ║
   ╚═══════════════════════════════════════╝
 
 ? Main Menu
@@ -137,9 +137,10 @@ Select the project as active, then execute each stage in order:
 
 ```
 Stage 1: Capture
-  → Detect URLs (crawler)       # discovers all pages + detects redirects
-  → Capture pending pages       # downloads HTML + assets, writes _redirects
-  → Apply pre-personalization   # removes analytics, cookie banners, etc.
+  → Detect URLs: Stage 1 (Discover & Save) # crawls and saves paths to temporary file
+  → Detect URLs: Stage 2 (Import paths)    # imports verified paths from the file
+  → Capture pending pages                  # downloads HTML + assets, writes _redirects
+  → Apply pre-personalization              # removes analytics, cookie banners, etc.
 
 Stage 2: Translation
   → Translate all captured pages  # _redirects is copied to each language dir
@@ -235,6 +236,22 @@ The test wizard asks three questions and then runs:
 5. Once satisfied, run the full workflow from Stage 1.
 
 > **Note:** Pages captured in test mode count towards the project's page database just like a normal crawl. You can inspect them from **Stage 1 → View captured pages** at any time.
+
+---
+
+## Two-Stage Crawler Workflow
+
+To prevent unwanted pages from being imported and captured, the URL detection process in **Stage 1: Capture** is split into two steps:
+
+1. **Stage 1 (Discover & Save)**
+   - The crawler crawls the website and discovers internal URLs matching `ignorePatterns` and `allowPatterns`.
+   - Instead of inserting them into the database, it writes the list of unique paths to a temporary markdown file at `data/tmp/detected-paths-<projectSlug>.md` (one path per line), and a companion JSON metadata file at `data/tmp/crawler-metadata-<projectSlug>.json`.
+   - Both files are ignored by git.
+
+2. **Stage 2 (Import paths)**
+   - You can open `data/tmp/detected-paths-<projectSlug>.md` in your editor, review the discovered paths, and delete the lines/paths you do not want to crawl or translate.
+   - Run **Detect URLs: Stage 2 (Import paths)** in the CLI.
+   - The CLI reads the reviewed markdown file, filters the corresponding page metadata and redirects, imports them into the local SQLite database, and automatically deletes the temporary markdown and JSON files.
 
 ---
 

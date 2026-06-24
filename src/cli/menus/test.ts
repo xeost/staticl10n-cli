@@ -10,7 +10,7 @@ import { applyPrePersonalization } from '../../stages/stage1/personalizer.js';
 import { translateProject } from '../../stages/stage2/index.js';
 import { applyPostPersonalization } from '../../stages/stage3/rules.js';
 import { logger } from '../../utils/logger.js';
-import { urlToFilePath } from '../../utils/paths.js';
+import { normalizeUrl, urlToFilePath } from '../../utils/paths.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -85,6 +85,7 @@ export async function testMenu(projectSlug: string, config: ProjectConfig): Prom
   if (!resolvedUrl.startsWith('http://') && !resolvedUrl.startsWith('https://')) {
     resolvedUrl = new URL(resolvedUrl, config.url).toString();
   }
+  resolvedUrl = normalizeUrl(resolvedUrl, config.crawl);
 
   const { languages } = await inquirer.prompt([
     {
@@ -197,11 +198,13 @@ async function runTestPipeline(
     let fragmentsDone = 0;
     let fragmentsTotal = 0;
     let currentLang = languages[0] || '';
+    let currentFragmentId = '';
 
     const updateProgressText = () => {
       const elapsed = Date.now() - pageStart;
       const estimations = formatEstimations(elapsed, fragmentsDone, fragmentsTotal);
-      spinner.text = `[2/4] [${model}] [${currentLang}] ${fragmentsDone}/${fragmentsTotal} fragments · ${formatElapsed(elapsed)}${estimations} · ${formatTokens(totalTokens)}`;
+      const fragIdStr = currentFragmentId ? ` · ${currentFragmentId}` : '';
+      spinner.text = `[2/4] [${model}] [${currentLang}] ${fragmentsDone}/${fragmentsTotal} fragments${fragIdStr} · ${formatElapsed(elapsed)}${estimations} · ${formatTokens(totalTokens)}`;
     };
 
     const timerInterval = setInterval(() => {
@@ -214,11 +217,12 @@ async function runTestPipeline(
       const result = await translateProject(
         projectSlug, config, languages, url,
         undefined,
-        (done, total, tokens, _url, lang) => {
+        (done, total, tokens, _url, lang, fragmentId) => {
           fragmentsDone = done;
           fragmentsTotal = total;
           totalTokens = tokens;
           currentLang = lang;
+          currentFragmentId = fragmentId;
           updateProgressText();
         },
       );

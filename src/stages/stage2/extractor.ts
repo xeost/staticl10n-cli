@@ -39,6 +39,7 @@ const BLOCK_TAGS = new Set([
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'figcaption',
   'header', 'footer', 'main', 'aside', 'nav', 'figure',
   'a', 'small', 'button', 'span', 'caption', 'dt', 'dd', 'dl', 'label',
+  'summary', 'legend', 'option',
 ]);
 
 // Tags whose full content should be excluded from translation extraction
@@ -48,7 +49,7 @@ const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'head', 'meta', 'link'
 // bypassing the text-ratio check (which fails when class/href attributes inflate markup length)
 const ALWAYS_EXTRACT_TAGS = new Set([
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'figcaption', 'caption', 'dt', 'label',
-  'a', 'small', 'button', 'span',
+  'a', 'small', 'button', 'span', 'summary', 'legend', 'option',
 ]);
 
 // Inline elements that are replaced with numbered placeholder tags when building
@@ -171,7 +172,10 @@ function buildPlaceholderText(
   const placeholders = new Map<number, PlaceholderEntry>();
 
   function processNode(node: AnyNode): string {
-    if (node.type === 'text') return (node as Text).data ?? '';
+    if (node.type === 'text') {
+      const rawText = (node as Text).data ?? '';
+      return rawText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
     if (node.type !== 'tag') return '';
     const el = node as Element;
     const tag = el.tagName?.toLowerCase() ?? '';
