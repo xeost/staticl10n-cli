@@ -1,5 +1,7 @@
 import * as cheerio from 'cheerio';
 import { chromium } from 'playwright';
+import fs from 'fs-extra';
+import path from 'path';
 import type { ProjectConfig } from '../../core/config.js';
 import {
   dbGetPagesByProject,
@@ -251,3 +253,200 @@ function isUrlAllowed(
 
   return !crawl.ignorePatterns.some((pattern) => pathname.includes(pattern));
 }
+
+export interface CrawlDiscoverResult {
+  discovered: number;
+  errors: number;
+  aborted: boolean;
+  mdPath: string;
+}
+
+/**
+ * Discovers all internal URLs of a site using Playwright in headless mode.
+ * Respects configured ignorePatterns/allowPatterns, but does not write to the DB.
+ * Instead, saves a list of pathnames to a temporary markdown file, and companion metadata to JSON.
+ */
+export async function crawlSiteDiscover(
+  projectSlug: string,
+  config: ProjectConfig,
+  onProgress?: (url: string, total: number) => void,
+  signal?: AbortSignal,
+): Promise<CrawlDiscoverResult> {
+  const project = dbGetProjectBySlug(projectSlug);
+  if (!project) throw new Error(`Project "${projectSlug}" not found`);
+
+  if (config.crawl.allowPatterns?.length && config.crawl.ignorePatterns.length) {
+    logger.warn(
+      'crawl.allowPatterns and crawl.ignorePatterns are both set — allowPatterns takes precedence. Remove ignorePatterns to silence this warning.',
+    );
+  }
+
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  });
+
+  const context = await browser.newContext({
+    userAgent:
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  });
+
+  const queue: string[] = [config.url];
+  const visited = new Set<string>();
+  let discovered = 0;
+  let errors = 0;
+  let aborted = false;
+
+  // Keyed by 'from' path to deduplicate across the entire crawl session
+  const redirectMap = new Map<string, DetectedRedirect>();
+
+  // Keep track of page metadata discovered in this session (keyed by pathname, e.g. "/docs/intro")
+  const pagesMetadata = new Map<string, {
+    url: string;
+    filePath: string;
+    status: string;
+    httpStatus: number;
+  }>();
+
+  // Pre-populate visited set from pages already in DB to support resuming
+  const existingPages = dbGetPagesByProject(project.id);
+  for (const page of existingPages) {
+    visited.add(page.url);
+  }
+
+  try {
+    while (queue.length > 0 && discovered < config.crawl.maxPages) {
+      if (signal?.aborted) {
+        aborted = true;
+        break;
+      }
+
+      const rawUrl = queue.shift()!;
+      const url = normalizeUrl(rawUrl, config.crawl);
+
+      if (visited.has(url)) continue;
+      visited.add(url);
+
+      // Check against crawl filter (blocklist or allowlist)
+      if (!isUrlAllowed(url, config.crawl)) {
+        logger.debug(`Skipping URL (filtered): ${url}`);
+        continue;
+      }
+
+      logger.debug(`Crawling: ${url}`);
+
+      const page = await context.newPage();
+      let httpStatus = 0;
+
+      // Track the first 3xx response seen for this navigation to detect redirects.
+      let firstRedirectStatus = 0;
+      const onResponse = (res: { status(): number }): void => {
+        const s = res.status();
+        if (s >= 300 && s < 400 && firstRedirectStatus === 0) {
+          firstRedirectStatus = s;
+        }
+      };
+      page.on('response', onResponse);
+
+      try {
+        const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        httpStatus = response?.status() ?? 0;
+
+        const finalUrl = page.url();
+        const normalizedFinal = normalizeUrl(finalUrl, config.crawl);
+
+        // Register redirect if the final URL differs from the requested one
+        if (firstRedirectStatus > 0) {
+          try {
+            const fromPath = new URL(url).pathname;
+            const toPath = new URL(normalizedFinal).pathname;
+            if (fromPath !== toPath) {
+              redirectMap.set(fromPath, {
+                from: fromPath,
+                to: toPath,
+                statusCode: firstRedirectStatus,
+                detectedDuring: 'crawl',
+              });
+            }
+          } catch {
+            // Ignore malformed URLs
+          }
+        }
+
+        const pagePath = urlToFilePath(normalizedFinal);
+        const status = httpStatus >= 400 ? 'error' : 'pending';
+        const finalPathname = new URL(normalizedFinal).pathname;
+
+        pagesMetadata.set(finalPathname, {
+          url: normalizedFinal,
+          filePath: pagePath,
+          status,
+          httpStatus,
+        });
+
+        discovered++;
+        onProgress?.(normalizedFinal, discovered);
+
+        if (httpStatus < 400) {
+          // Extract links from the page
+          const html = await page.content();
+          const links = extractLinks(html, normalizedFinal, config);
+          for (const link of links) {
+            if (!visited.has(link)) {
+              queue.push(link);
+            }
+          }
+        } else {
+          logger.warn(`HTTP ${httpStatus} for URL: ${normalizedFinal}`);
+          errors++;
+        }
+      } catch (err) {
+        logger.warn(`Failed to crawl ${url}: ${(err as Error).message}`);
+        try {
+          const pathname = new URL(url).pathname;
+          pagesMetadata.set(pathname, {
+            url,
+            filePath: urlToFilePath(url),
+            status: 'error',
+            httpStatus: 0,
+          });
+        } catch {
+          // Ignore completely invalid URLs
+        }
+        errors++;
+      } finally {
+        page.off('response', onResponse);
+        await page.close();
+      }
+
+      // Polite delay with jitter between requests
+      if (queue.length > 0) {
+        await abortableDelayWithJitter(config.crawl.delayMs, config.crawl.delayJitterMs, signal);
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+
+  // Ensure tmp directory exists
+  const tmpDir = '/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/data/tmp';
+  fs.ensureDirSync(tmpDir);
+
+  const mdPath = path.join(tmpDir, `detected-paths-${projectSlug}.md`);
+  const jsonPath = path.join(tmpDir, `crawler-metadata-${projectSlug}.json`);
+
+  // Write paths to mdPath, one per line (using only pathnames)
+  const pathnames = Array.from(pagesMetadata.keys()).sort();
+  fs.writeFileSync(mdPath, pathnames.join('\n') + '\n', 'utf8');
+
+  // Write metadata to jsonPath
+  const metadataContent = {
+    projectSlug,
+    pages: Object.fromEntries(pagesMetadata),
+    redirects: Array.from(redirectMap.values()),
+  };
+  fs.writeFileSync(jsonPath, JSON.stringify(metadataContent, null, 2), 'utf8');
+
+  return { discovered, errors, aborted, mdPath };
+}
+

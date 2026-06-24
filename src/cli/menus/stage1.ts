@@ -2,12 +2,15 @@ import chalk from 'chalk';
 import cliProgress from 'cli-progress';
 import inquirer from 'inquirer';
 import ora from 'ora';
+import fs from 'fs-extra';
+import path from 'path';
 import type { ProjectConfig } from '../../core/config.js';
-import { dbDeletePagesByProject, dbGetPagesByProject, dbGetProjectBySlug } from '../../core/db.js';
+import { dbDeletePagesByProject, dbGetPagesByProject, dbGetProjectBySlug, dbInsertPageIfNew } from '../../core/db.js';
 import { capturePages } from '../../stages/stage1/exporter.js';
 import { applyPrePersonalization } from '../../stages/stage1/personalizer.js';
-import { crawlSite } from '../../stages/stage1/crawler.js';
-import { loadRedirectsFile, writeRedirectsTo } from '../../stages/stage1/redirects.js';
+import { crawlSiteDiscover } from '../../stages/stage1/crawler.js';
+import { loadRedirectsFile, writeRedirectsTo, mergeDetectedRedirects } from '../../stages/stage1/redirects.js';
+import { normalizeUrl, urlToFilePath } from '../../utils/paths.js';
 import { logger } from '../../utils/logger.js';
 import { clearScreen, printStageHeader, promptSelect } from '../ui.js';
 
@@ -15,12 +18,13 @@ import { clearScreen, printStageHeader, promptSelect } from '../ui.js';
 
 export async function stage1Menu(projectSlug: string, config: ProjectConfig): Promise<void> {
   clearScreen();
-  let lastChoiceValue = 'crawl';
+  let lastChoiceValue = 'crawl-discover';
   while (true) {
     const action = await promptSelect(
       'Stage 1: Capture',
       [
-        { name: 'Detect URLs (crawler)', value: 'crawl' },
+        { name: 'Detect URLs: Stage 1 (Discover & Save)', value: 'crawl-discover' },
+        { name: 'Detect URLs: Stage 2 (Import paths)', value: 'crawl-import' },
         { name: 'Capture pending pages', value: 'capture' },
         { name: 'Re-capture specific page', value: 'recapture' },
         { name: 'Apply pre-personalization (on original/)', value: 'pre-personalize' },
@@ -46,8 +50,11 @@ export async function stage1Menu(projectSlug: string, config: ProjectConfig): Pr
     lastChoiceValue = action;
 
     switch (action) {
-      case 'crawl':
-        await runCrawl(projectSlug, config);
+      case 'crawl-discover':
+        await runCrawlDiscover(projectSlug, config);
+        break;
+      case 'crawl-import':
+        await runCrawlImport(projectSlug, config);
         break;
       case 'capture':
         await runCapture(projectSlug, config);
@@ -76,7 +83,7 @@ export async function stage1Menu(projectSlug: string, config: ProjectConfig): Pr
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
-async function runCrawl(projectSlug: string, config: ProjectConfig): Promise<void> {
+async function runCrawlDiscover(projectSlug: string, config: ProjectConfig): Promise<void> {
   const project = dbGetProjectBySlug(projectSlug)!;
   const existingPages = dbGetPagesByProject(project.id);
 
@@ -94,14 +101,13 @@ async function runCrawl(projectSlug: string, config: ProjectConfig): Promise<voi
 
     if (mode === 'reset') {
       dbDeletePagesByProject(project.id);
-      logger.info('Cleared existing pages. Starting fresh crawl.');
+      logger.info('Cleared existing pages. Starting fresh discovery.');
     }
   }
 
   const controller = new AbortController();
 
-  // Keypress-based cancellation: works even when spawned via pnpm (which also
-  // receives SIGINT and kills the whole process group before our handler runs).
+  // Keypress-based cancellation
   let keypressCleanup: (() => void) | null = null;
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(true);
@@ -126,32 +132,106 @@ async function runCrawl(projectSlug: string, config: ProjectConfig): Promise<voi
     };
   }
 
-  const spinner = ora('Starting crawler...').start();
+  const spinner = ora('Starting crawler discovery...').start();
   const bar = new cliProgress.SingleBar(
-    { format: `Crawling | {bar} | {value} URLs found  ${chalk.gray('[q] cancel')}` },
+    { format: `Discovering | {bar} | {value} URLs found  ${chalk.gray('[q] cancel')}` },
     cliProgress.Presets.shades_classic,
   );
   bar.start(config.crawl.maxPages, 0);
   spinner.stop();
 
   try {
-    const result = await crawlSite(projectSlug, config, (_url, total) => {
+    const result = await crawlSiteDiscover(projectSlug, config, (_url, total) => {
       bar.update(total);
     }, controller.signal);
     bar.stop();
-    const redirectMsg = result.redirectsDetected > 0
-      ? `, ${result.redirectsDetected} redirect(s) detected`
-      : '';
     if (result.aborted) {
-      logger.warn(`Crawl cancelled: ${result.discovered} URLs discovered, ${result.errors} errors${redirectMsg}.`);
+      logger.warn(`Crawl discovery cancelled: ${result.discovered} URLs discovered.`);
     } else {
-      logger.success(`Crawl complete: ${result.discovered} URLs discovered, ${result.errors} errors${redirectMsg}.`);
+      logger.success(`Crawl discovery complete: ${result.discovered} URLs discovered.`);
     }
+    logger.info(`Paths saved to: ${result.mdPath}`);
+    logger.info('Please review the list of paths in the markdown file, delete the ones you do not want, and run "Detect URLs: Stage 2 (Import paths)".');
   } catch (err) {
     bar.stop();
-    logger.error(`Crawl failed: ${(err as Error).message}`);
+    logger.error(`Crawl discovery failed: ${(err as Error).message}`);
   } finally {
     keypressCleanup?.();
+  }
+}
+
+async function runCrawlImport(projectSlug: string, config: ProjectConfig): Promise<void> {
+  const project = dbGetProjectBySlug(projectSlug)!;
+  const tmpDir = '/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/data/tmp';
+  const mdPath = path.join(tmpDir, `detected-paths-${projectSlug}.md`);
+  const jsonPath = path.join(tmpDir, `crawler-metadata-${projectSlug}.json`);
+
+  if (!fs.existsSync(mdPath) || !fs.existsSync(jsonPath)) {
+    logger.error(`No crawler results found for project "${projectSlug}". Please run "Detect URLs: Stage 1 (Discover & Save)" first.`);
+    return;
+  }
+
+  const spinner = ora('Importing paths...').start();
+  try {
+    const mdContent = fs.readFileSync(mdPath, 'utf8');
+    const importPaths = mdContent
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+
+    const jsonContent = fs.readFileSync(jsonPath, 'utf8');
+    const metadata = JSON.parse(jsonContent);
+
+    let pagesInserted = 0;
+    const approvedPathsSet = new Set(importPaths);
+
+    for (const pathname of importPaths) {
+      const pageMeta = metadata.pages[pathname];
+      let url: string;
+      let filePath: string;
+      let status: string;
+      let httpStatus: number;
+
+      if (pageMeta) {
+        url = pageMeta.url;
+        filePath = pageMeta.filePath;
+        status = pageMeta.status;
+        httpStatus = pageMeta.httpStatus;
+      } else {
+        // Fallback if user manually added/modified a path
+        try {
+          url = new URL(pathname, config.url).href;
+        } catch {
+          url = config.url.replace(/\/$/, '') + pathname;
+        }
+        url = normalizeUrl(url, config.crawl);
+        filePath = urlToFilePath(url);
+        status = 'pending';
+        httpStatus = 200;
+      }
+
+      dbInsertPageIfNew(project.id, url, filePath, status, httpStatus);
+      pagesInserted++;
+    }
+
+    // Filter redirects: only keep redirects where target path is in the approved paths
+    const redirectsToMerge = (metadata.redirects || []).filter((r: any) => {
+      return approvedPathsSet.has(r.to);
+    });
+
+    if (redirectsToMerge.length > 0) {
+      mergeDetectedRedirects(projectSlug, redirectsToMerge);
+    }
+
+    // Delete temporary files after import
+    fs.unlinkSync(mdPath);
+    fs.unlinkSync(jsonPath);
+
+    spinner.stop();
+    logger.success(`Import complete: ${pagesInserted} page(s) imported, ${redirectsToMerge.length} redirect(s) registered.`);
+  } catch (err) {
+    spinner.stop();
+    logger.error(`Import failed: ${(err as Error).message}`);
   }
 }
 

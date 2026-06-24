@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 data/logs/
+data/tmp/
 *.js.map
 .wrangler/
 temp-public-static/
