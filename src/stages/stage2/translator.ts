@@ -174,6 +174,7 @@ async function translateBatch(
   for (const fragment of batch) {
     onFragmentStart?.(fragment.id);
     let translated: string | null = null;
+    let successfulModel: string | null = null;
     let fragmentTokens = 0;
     let fragmentLlmCalls = 0;
     const attemptsLog: Array<{
@@ -233,6 +234,7 @@ async function translateBatch(
 
           if (translated && integrityResult.passed) {
             integrityPassed = true;
+            successfulModel = model;
             batchInputTokens += inputTokens;
             batchOutputTokens += outputTokens;
             batchTotalTokens += callTokens;
@@ -336,7 +338,7 @@ async function translateBatch(
         fragment.outerHtml,
         targetLanguage,
         translated,
-        getPrimaryModel(config),
+        successfulModel || getPrimaryModel(config),
       );
       if (hasLoggedSeparatorForFragment) {
         logger.warn(`SUCCESS: fragment ${fragment.id} translated successfully`);
@@ -848,7 +850,7 @@ export async function translateCodeComments(
               model,
             );
             translatedBodies = redistributeLines(result.text, group.lines.length);
-            storeCachedTranslation(projectId, cacheKey, targetLanguage, result.text, getPrimaryModel(config));
+            storeCachedTranslation(projectId, cacheKey, targetLanguage, result.text, model);
             break;
           } catch (err) {
             if (models.indexOf(model) < models.length - 1) {

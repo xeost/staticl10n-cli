@@ -49,7 +49,7 @@ translation:
   # Comment out any model to temporarily disable it
   model:
     # - llama3.1
-    - gemma3:12b
+    # - gemma3:12b
     - gemma4
   # Language code of the source content (ISO 639-1, e.g. "en", "es", "fr")
   sourceLanguage: en

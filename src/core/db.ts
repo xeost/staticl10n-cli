@@ -317,24 +317,23 @@ export function dbGetCachedTranslation(
   projectId: number,
   sourceHash: string,
   targetLanguage: string,
-  model: string,
   maxAgeSeconds?: number,
 ): CacheRow | undefined {
   if (maxAgeSeconds !== undefined) {
     return getDb()
       .prepare(
         `SELECT source_hash, translated_text, model FROM translation_cache
-         WHERE project_id = ? AND source_hash = ? AND target_language = ? AND model = ?
+         WHERE project_id = ? AND source_hash = ? AND target_language = ?
            AND created_at > datetime('now', '-' || ? || ' seconds')`,
       )
-      .get(projectId, sourceHash, targetLanguage, model, maxAgeSeconds) as CacheRow | undefined;
+      .get(projectId, sourceHash, targetLanguage, maxAgeSeconds) as CacheRow | undefined;
   }
   return getDb()
     .prepare(
       `SELECT source_hash, translated_text, model FROM translation_cache
-       WHERE project_id = ? AND source_hash = ? AND target_language = ? AND model = ?`,
+       WHERE project_id = ? AND source_hash = ? AND target_language = ?`,
     )
-    .get(projectId, sourceHash, targetLanguage, model) as CacheRow | undefined;
+    .get(projectId, sourceHash, targetLanguage) as CacheRow | undefined;
 }
 
 export function dbInsertCacheEntry(

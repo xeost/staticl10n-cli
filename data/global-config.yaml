@@ -1,0 +1,14 @@
+# staticl10n global configuration
+
+# Model priorities
+# The models are ordered from highest priority / most powerful (top/first) to lowest priority (bottom/last).
+# Higher models in this list are considered superior (more powerful) to lower ones.
+#
+# When translating a fragment, if a cache entry is found for a different model:
+# - If the current model is superior (higher priority / more powerful) to the cached entry's model,
+#   we re-translate and update the cache.
+# - Otherwise (lower or equal priority), we reuse the cached translation to save tokens.
+model_priorities:
+  - gemma4
+  - gemma3:12b
+  - llama3.1

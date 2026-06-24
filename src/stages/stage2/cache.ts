@@ -4,6 +4,8 @@ import {
   dbGetCachedTranslation,
   dbInsertCacheEntry,
 } from '../../core/db.js';
+import { compareModelPriority } from '../../core/globalConfig.js';
+import { logger } from '../../utils/logger.js';
 
 // ─── Translation Cache ────────────────────────────────────────────────────────
 
@@ -29,11 +31,25 @@ export function getCachedTranslation(
 
   const hash = hashFragment(sourceText);
   const maxAge = expiry > 0 ? expiry : undefined;
-  const model = Array.isArray(config.translation.model)
+  
+  const row = dbGetCachedTranslation(projectId, hash, targetLanguage, maxAge);
+  if (!row) return null;
+
+  const currentModel = Array.isArray(config.translation.model)
     ? config.translation.model[0]
     : config.translation.model;
-  const row = dbGetCachedTranslation(projectId, hash, targetLanguage, model, maxAge);
-  return row?.translated_text ?? null;
+
+  const cachedModel = row.model;
+
+  // If the current model is strictly superior to the cached model, we force a re-translation
+  if (compareModelPriority(currentModel, cachedModel) > 0) {
+    logger.debug(
+      `Cache hit for "${sourceText.slice(0, 30)}..." but current model "${currentModel}" is superior to cached model "${cachedModel}". Forcing re-translation.`,
+    );
+    return null;
+  }
+
+  return row.translated_text;
 }
 
 /**
