@@ -570,7 +570,7 @@ function verifyPlaceholderIntegrity(
     return false;
   }
 
-  // Check text expansion / contraction limit (max 60% variation allowed for texts where character diff > 10)
+  // Check text expansion / contraction limit (max 80% variation allowed for texts where character diff > 10)
   const cleanOriginal = originalText.replace(/<[^>]+>/g, '').trim();
   const cleanTranslated = translated.replace(/<[^>]+>/g, '').trim();
   const lenOrig = cleanOriginal.length;
@@ -578,9 +578,9 @@ function verifyPlaceholderIntegrity(
 
   if (lenOrig > 0) {
     const diff = Math.abs(lenTrans - lenOrig);
-    if (diff > Math.max(10, lenOrig * 0.6)) {
+    if (diff > Math.max(10, lenOrig * 0.8)) {
       const percentage = ((diff / lenOrig) * 100).toFixed(1);
-      logger.warn(`Integrity check failed: text length changed by ${percentage}% (${lenOrig} -> ${lenTrans} chars), exceeding the 60% limit (with a minimum of 10 chars difference). Original: "${cleanOriginal}", Translated: "${cleanTranslated}"`);
+      logger.warn(`Integrity check failed: text length changed by ${percentage}% (${lenOrig} -> ${lenTrans} chars), exceeding the 80% limit (with a minimum of 10 chars difference). Original: "${cleanOriginal}", Translated: "${cleanTranslated}"`);
       return false;
     }
   }

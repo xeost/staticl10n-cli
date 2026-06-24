@@ -1,3 +1,4 @@
+import fs from 'fs';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 import ora from 'ora';
@@ -52,30 +53,50 @@ export async function testMenu(projectSlug: string, config: ProjectConfig): Prom
     {
       type: 'input',
       name: 'url',
-      message: 'URL to test (must be reachable from this machine):',
-      default: config.url,
+      message: 'Path to test (leave empty to cancel):',
+      default: '/',
       validate: (v: string) => {
+        if (v.trim().length === 0) return true;
+        let resolvedVal = v.trim();
+        if (!resolvedVal.startsWith('http://') && !resolvedVal.startsWith('https://')) {
+          try {
+            resolvedVal = new URL(resolvedVal, config.url).toString();
+          } catch {
+            return 'Enter a valid path/URL or leave empty to cancel';
+          }
+        }
         try {
-          new URL(v);
+          new URL(resolvedVal);
           return true;
         } catch {
-          return 'Enter a valid URL';
+          return 'Enter a valid URL or path (e.g. /about)';
         }
       },
     },
   ]);
 
+  if (!url || url.trim().length === 0) {
+    logger.info('Test aborted.');
+    return;
+  }
+
+  // Resolve absolute URL if it is a relative path
+  let resolvedUrl = url.trim();
+  if (!resolvedUrl.startsWith('http://') && !resolvedUrl.startsWith('https://')) {
+    resolvedUrl = new URL(resolvedUrl, config.url).toString();
+  }
+
   const { languages } = await inquirer.prompt([
     {
       type: 'checkbox',
       name: 'languages',
-      message: 'Languages to translate into (space to toggle):',
+      message: 'Languages to translate into (space to toggle, deselect all to cancel):',
       choices: config.translation.targetLanguages.map((l) => ({ name: l, value: l, checked: true })),
     },
   ]);
 
   if ((languages as string[]).length === 0) {
-    logger.warn('No languages selected. Aborting.');
+    logger.info('Test aborted.');
     return;
   }
 
@@ -83,7 +104,7 @@ export async function testMenu(projectSlug: string, config: ProjectConfig): Prom
     {
       type: 'checkbox',
       name: 'stages',
-      message: 'Which stages to run (space to toggle):',
+      message: 'Which stages to run (space to toggle, deselect all to cancel):',
       choices: [
         { name: 'Stage 1 : Capture', value: 'capture', checked: true },
         { name: 'Stage 1b: Pre-personalization', value: 'pre-personalize', checked: true },
@@ -94,12 +115,12 @@ export async function testMenu(projectSlug: string, config: ProjectConfig): Prom
   ]);
 
   if ((stages as string[]).length === 0) {
-    logger.warn('No stages selected. Aborting.');
+    logger.info('Test aborted.');
     return;
   }
 
   console.log();
-  await runTestPipeline(projectSlug, config, url as string, languages as string[], stages as string[]);
+  await runTestPipeline(projectSlug, config, resolvedUrl, languages as string[], stages as string[]);
 }
 
 // ─── Pipeline ──────────────────────────────────────────────────────────────────
@@ -114,8 +135,17 @@ async function runTestPipeline(
   const project = dbGetProjectBySlug(projectSlug)!;
   const pagePath = urlToFilePath(url);
 
+  // Check if the original captured file already exists on disk
+  const originalFilePath = path.join(config.paths.original, pagePath);
+  const fileExists = fs.existsSync(originalFilePath);
+
+  let initialStatus = 'pending';
+  if (fileExists && !stages.includes('capture')) {
+    initialStatus = 'captured';
+  }
+
   // Ensure the URL exists in the DB so stage functions can find it
-  dbUpsertPage(project.id, url, pagePath, 'pending');
+  dbUpsertPage(project.id, url, pagePath, initialStatus);
 
   const results: Record<string, string> = {};
 
