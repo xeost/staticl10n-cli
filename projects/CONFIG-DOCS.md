@@ -199,7 +199,7 @@ GOOGLE_GEMINI_API_KEY=
 ### Variable reference
 
 | Variable | Provider | Description |
-|---|---|---|
+| --- | --- | --- |
 | `GOOGLE_GEMINI_API_KEY` | `gemini` | Google Gemini REST API key. Required when `translation.provider` is `"gemini"`. |
 | `OPENAI_API_KEY` | *(future)* | OpenAI API key — reserved for a future provider. |
 | `MISTRAL_API_KEY` | *(future)* | Mistral AI API key — reserved for a future provider. |
@@ -284,7 +284,7 @@ This is designed for projects that span **multiple related sites** — for examp
 The Astro project has two separate sites:
 
 | Original | Translated |
-|---|---|
+| --- | --- |
 | `https://astro.build` | `https://astro.esdocu.com` |
 | `https://docs.astro.build` | `https://astro-docs.esdocu.com` |
 
@@ -317,7 +317,7 @@ With this configuration, a link like `<a href="https://docs.astro.build/en/getti
 ## Personalization rule types
 
 | Type | Required fields | Optional fields | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `remove_element` | `selector` | — | Removes all matching elements |
 | `remove_attribute` | `selector`, `attribute` | — | Removes an attribute from matching elements |
 | `replace_text` | `search`, `replace` | `selector` | Replaces all occurrences of a text string. Without `selector`: replaces in the entire body. With `selector`: scoped to matching elements only (e.g. `"title"` targets the `<title>` tag in `<head>`). |
