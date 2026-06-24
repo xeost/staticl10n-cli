@@ -6,6 +6,7 @@ try { (process as typeof process & { loadEnvFile?: () => void }).loadEnvFile?.()
 import chalk from 'chalk';
 import { Command } from 'commander';
 import inquirer from 'inquirer';
+import readline from 'readline';
 import { readConfig } from '../core/config.js';
 import {
   dbGetPagesByProject,
@@ -17,7 +18,7 @@ import { getProjectConfig } from '../core/project.js';
 import { printChangeReport } from '../stages/stage4/reporter.js';
 import { diffSite } from '../stages/stage4/differ.js';
 import { logger } from '../utils/logger.js';
-import { clearScreen, printBanner, printStageHeader } from './ui.js';
+import { clearScreen, printBanner, printStageHeader, C, promptSelect } from './ui.js';
 import { projectsMenu } from './menus/projects.js';
 import { stage1Menu } from './menus/stage1.js';
 import { stage2Menu } from './menus/stage2.js';
@@ -83,7 +84,7 @@ if (isSubcommand || isFlagOnly) {
 
 async function runInteractive(): Promise<void> {
   clearScreen();
-  printBanner();
+  let lastChoiceValue = 'projects';
   while (true) {
     const activeProject = session.activeProjectSlug
       ? dbGetProjectBySlug(session.activeProjectSlug)
@@ -93,44 +94,43 @@ async function runInteractive(): Promise<void> {
       ? chalk.green(`[${activeProject.name}]`)
       : chalk.gray('[no project selected]');
 
-    const baseChoices = [
+    // Build menu items dynamically
+    const choices = [
       { name: 'Manage projects', value: 'projects' },
       { name: `Select active project  ${projectLabel}`, value: 'select-project' },
     ];
 
-    const projectChoices = activeProject
-      ? [
-          new inquirer.Separator(chalk.dim('─────── Active project ───────')),
-          { name: 'View project status', value: 'status' },
-          { name: 'Stage 1: Capture', value: 'stage1' },
-          { name: 'Stage 2: Translation', value: 'stage2' },
-          { name: 'Stage 3: Post-Personalization', value: 'stage3' },
-          { name: 'Stage 4: Monitoring', value: 'stage4' },
-          new inquirer.Separator(),
-          { name: chalk.yellow('⚡ Test: process single page'), value: 'test' },
-        ]
-      : [];
+    if (activeProject) {
+      choices.push({ name: 'View project status', value: 'status' });
+      choices.push({ name: 'Stage 1: Capture', value: 'stage1' });
+      choices.push({ name: 'Stage 2: Translation', value: 'stage2' });
+      choices.push({ name: 'Stage 3: Post-Personalization', value: 'stage3' });
+      choices.push({ name: 'Stage 4: Monitoring', value: 'stage4' });
+      choices.push({ name: '⚡ Test: process single page', value: 'test' });
+    }
 
-    const { action } = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'action',
-        message: 'Main Menu',
-        choices: [
-          ...baseChoices,
-          ...projectChoices,
-          new inquirer.Separator(),
-          { name: chalk.red('Exit'), value: 'exit' },
-        ],
-      },
-    ]);
+    choices.push({ name: 'Exit', value: 'exit' });
 
-    if (action === 'exit') {
+    const choice = await promptSelect(
+      'Main Menu',
+      choices,
+      activeProject ? activeProject.name : undefined,
+      lastChoiceValue
+    );
+
+    if (choice === 'clear') {
+      clearScreen();
+      continue;
+    }
+
+    if (choice === 'exit') {
       console.log(chalk.cyan('\nGoodbye!\n'));
       process.exit(0);
     }
 
-    await handleMainAction(action);
+    lastChoiceValue = choice;
+
+    await handleMainAction(choice);
     printStageHeader('Main Menu');
   }
 }
@@ -200,17 +200,20 @@ async function selectProjectMenu(): Promise<void> {
     return;
   }
 
-  const { slug } = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'slug',
-      message: 'Select active project:',
-      choices: projects.map((p) => ({
-        name: `${chalk.cyan(p.slug)} — ${p.name}`,
+  const slug = await promptSelect(
+    'Select active project',
+    [
+      ...projects.map((p) => ({
+        name: `${p.slug} — ${p.name}`,
         value: p.slug,
       })),
-    },
-  ]);
+      { name: '← Back', value: 'back' },
+    ]
+  );
+
+  if (slug === 'clear' || slug === 'back') {
+    return;
+  }
 
   session.activeProjectSlug = slug;
   logger.success(`Active project set to: ${slug}`);

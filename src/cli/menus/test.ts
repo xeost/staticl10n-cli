@@ -21,6 +21,14 @@ function formatElapsed(ms: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m ${s % 60}s`;
 }
 
+function formatEstimations(elapsedMs: number, done: number, total: number): string {
+  if (done <= 0 || elapsedMs <= 0 || done >= total) return '';
+  const avg = elapsedMs / done;
+  const remainingMs = avg * (total - done);
+  const totalMs = avg * total;
+  return ` (ETA: ${formatElapsed(remainingMs)} | Total: ${formatElapsed(totalMs)})`;
+}
+
 function formatTokens(n: number): string {
   if (n === 0) return '0 tokens';
   if (n < 1000) return `${n} tokens`;
@@ -155,13 +163,33 @@ async function runTestPipeline(
     let totalTokens = 0;
     const spinner = ora(`[2/4] [${model}] Translating into: ${languages.join(', ')}...`).start();
     const pageStart = Date.now();
+
+    let fragmentsDone = 0;
+    let fragmentsTotal = 0;
+    let currentLang = languages[0] || '';
+
+    const updateProgressText = () => {
+      const elapsed = Date.now() - pageStart;
+      const estimations = formatEstimations(elapsed, fragmentsDone, fragmentsTotal);
+      spinner.text = `[2/4] [${model}] [${currentLang}] ${fragmentsDone}/${fragmentsTotal} fragments · ${formatElapsed(elapsed)}${estimations} · ${formatTokens(totalTokens)}`;
+    };
+
+    const timerInterval = setInterval(() => {
+      if (fragmentsTotal > 0) {
+        updateProgressText();
+      }
+    }, 100);
+
     try {
       const result = await translateProject(
         projectSlug, config, languages, url,
         undefined,
         (done, total, tokens, _url, lang) => {
+          fragmentsDone = done;
+          fragmentsTotal = total;
           totalTokens = tokens;
-          spinner.text = `[2/4] [${model}] [${lang}] ${done}/${total} fragments · ${formatElapsed(Date.now() - pageStart)} · ${formatTokens(tokens)}`;
+          currentLang = lang;
+          updateProgressText();
         },
       );
       if (result.pagesTranslated > 0) {
@@ -180,6 +208,8 @@ async function runTestPipeline(
     } catch (err) {
       spinner.fail(`[2/4] Translation error: ${(err as Error).message}`);
       results['translate'] = 'error';
+    } finally {
+      clearInterval(timerInterval);
     }
   }
 

@@ -5,29 +5,38 @@ import type { SiteType } from '../../core/config.js';
 import { dbGetProjectBySlug, dbListProjects } from '../../core/db.js';
 import { createProject, deleteProject, slugify } from '../../core/project.js';
 import { logger } from '../../utils/logger.js';
-import { clearScreen, printStageHeader } from '../ui.js';
+import { clearScreen, printStageHeader, promptSelect } from '../ui.js';
 
 // ─── Project Management Menu ──────────────────────────────────────────────────
 
 /** Displays and handles the project management submenu. */
 export async function projectsMenu(): Promise<void> {
   clearScreen();
+  let lastChoiceValue = 'list';
   while (true) {
-    printStageHeader('Project Management');
-    const { action } = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'action',
-        message: 'Project Management',
-        choices: [
-          { name: 'List projects', value: 'list' },
-          { name: 'Create new project', value: 'create' },
-          { name: 'Edit project config', value: 'edit' },
-          { name: 'Delete project', value: 'delete' },
-          { name: chalk.gray('← Back'), value: 'back' },
-        ],
-      },
-    ]);
+    const action = await promptSelect(
+      'Project Management',
+      [
+        { name: 'List projects', value: 'list' },
+        { name: 'Create new project', value: 'create' },
+        { name: 'Edit project config', value: 'edit' },
+        { name: 'Delete project', value: 'delete' },
+        { name: '← Back', value: 'back' },
+      ],
+      undefined,
+      lastChoiceValue
+    );
+
+    if (action === 'clear') {
+      clearScreen();
+      continue;
+    }
+
+    if (action === 'back') {
+      return;
+    }
+
+    lastChoiceValue = action;
 
     switch (action) {
       case 'list':
@@ -42,8 +51,6 @@ export async function projectsMenu(): Promise<void> {
       case 'delete':
         await deleteProjectMenu();
         break;
-      case 'back':
-        return;
     }
   }
 }
@@ -67,13 +74,21 @@ async function listProjectsMenu(): Promise<void> {
 // ─── Create ────────────────────────────────────────────────────────────────────
 
 async function createProjectMenu(): Promise<void> {
-  const answers = await inquirer.prompt([
+  const nameAnswer = await inquirer.prompt([
     {
       type: 'input',
       name: 'name',
-      message: 'Project name:',
-      validate: (v: string) => (v.trim().length > 0 ? true : 'Name is required'),
+      message: 'Project name (leave empty to cancel):',
     },
+  ]);
+
+  const name = (nameAnswer.name as string)?.trim() || '';
+  if (!name) {
+    logger.info('Project creation cancelled.');
+    return;
+  }
+
+  const answers = await inquirer.prompt([
     {
       type: 'input',
       name: 'url',
@@ -117,7 +132,7 @@ async function createProjectMenu(): Promise<void> {
     },
   ]);
 
-  const slug = slugify(answers.name);
+  const slug = slugify(name);
   const targetUrls: Record<string, string> = {};
   for (const pair of (answers.targetUrlsRaw as string).split(',')) {
     const trimmed = pair.trim();
@@ -131,7 +146,7 @@ async function createProjectMenu(): Promise<void> {
 
   try {
     const project = createProject({
-      name: answers.name as string,
+      name,
       slug,
       url: answers.url as string,
       targetUrls,
@@ -154,14 +169,15 @@ async function editProjectMenu(): Promise<void> {
     return;
   }
 
-  const { slug } = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'slug',
-      message: 'Select project to edit:',
-      choices: projects.map((p) => ({ name: `${p.slug} — ${p.name}`, value: p.slug })),
-    },
-  ]);
+  const slug = await promptSelect(
+    'Select project to edit',
+    [
+      ...projects.map((p) => ({ name: `${p.slug} — ${p.name}`, value: p.slug })),
+      { name: '← Back', value: 'back' },
+    ]
+  );
+
+  if (slug === 'clear' || slug === 'back') return;
 
   const project = dbGetProjectBySlug(slug);
   if (!project) return;
@@ -185,14 +201,15 @@ async function deleteProjectMenu(): Promise<void> {
     return;
   }
 
-  const { slug } = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'slug',
-      message: 'Select project to delete:',
-      choices: projects.map((p) => ({ name: `${p.slug} — ${p.name}`, value: p.slug })),
-    },
-  ]);
+  const slug = await promptSelect(
+    'Select project to delete',
+    [
+      ...projects.map((p) => ({ name: `${p.slug} — ${p.name}`, value: p.slug })),
+      { name: '← Back', value: 'back' },
+    ]
+  );
+
+  if (slug === 'clear' || slug === 'back') return;
 
   const { confirmed } = await inquirer.prompt([
     {

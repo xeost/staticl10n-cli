@@ -9,32 +9,41 @@ import { applyPrePersonalization } from '../../stages/stage1/personalizer.js';
 import { crawlSite } from '../../stages/stage1/crawler.js';
 import { loadRedirectsFile, writeRedirectsTo } from '../../stages/stage1/redirects.js';
 import { logger } from '../../utils/logger.js';
-import { clearScreen, printStageHeader } from '../ui.js';
+import { clearScreen, printStageHeader, promptSelect } from '../ui.js';
 
 // ─── Stage 1 Menu ─────────────────────────────────────────────────────────────
 
 export async function stage1Menu(projectSlug: string, config: ProjectConfig): Promise<void> {
   clearScreen();
+  let lastChoiceValue = 'crawl';
   while (true) {
-    printStageHeader('Stage 1: Capture', config.name);
-    const { action } = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'action',
-        message: chalk.bold('Stage 1: Capture'),
-        choices: [
-          { name: 'Detect URLs (crawler)', value: 'crawl' },
-          { name: 'Capture pending pages', value: 'capture' },
-          { name: 'Re-capture specific page', value: 'recapture' },
-          { name: 'Apply pre-personalization (on original/)', value: 'pre-personalize' },
-          { name: 'Preview pre-personalization (dry-run)', value: 'pre-personalize-dry' },
-          { name: 'View captured pages', value: 'view' },
-          { name: 'View detected redirects', value: 'view-redirects' },
-          { name: 'Regenerate _redirects file', value: 'regen-redirects' },
-          { name: chalk.gray('← Back'), value: 'back' },
-        ],
-      },
-    ]);
+    const action = await promptSelect(
+      'Stage 1: Capture',
+      [
+        { name: 'Detect URLs (crawler)', value: 'crawl' },
+        { name: 'Capture pending pages', value: 'capture' },
+        { name: 'Re-capture specific page', value: 'recapture' },
+        { name: 'Apply pre-personalization (on original/)', value: 'pre-personalize' },
+        { name: 'Preview pre-personalization (dry-run)', value: 'pre-personalize-dry' },
+        { name: 'View captured pages', value: 'view' },
+        { name: 'View detected redirects', value: 'view-redirects' },
+        { name: 'Regenerate _redirects file', value: 'regen-redirects' },
+        { name: '← Back', value: 'back' },
+      ],
+      config.name,
+      lastChoiceValue
+    );
+
+    if (action === 'clear') {
+      clearScreen();
+      continue;
+    }
+
+    if (action === 'back') {
+      return;
+    }
+
+    lastChoiceValue = action;
 
     switch (action) {
       case 'crawl':
@@ -61,8 +70,6 @@ export async function stage1Menu(projectSlug: string, config: ProjectConfig): Pr
       case 'regen-redirects':
         await runRegenRedirects(projectSlug, config);
         break;
-      case 'back':
-        return;
     }
   }
 }
@@ -74,17 +81,16 @@ async function runCrawl(projectSlug: string, config: ProjectConfig): Promise<voi
   const existingPages = dbGetPagesByProject(project.id);
 
   if (existingPages.length > 0) {
-    const { mode } = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'mode',
-        message: `Found ${existingPages.length} page(s) already in the database.`,
-        choices: [
-          { name: 'Resume (skip already discovered URLs)', value: 'resume' },
-          { name: 'Start from scratch (clear existing pages)', value: 'reset' },
-        ],
-      },
-    ]);
+    const mode = await promptSelect(
+      `Found ${existingPages.length} page(s) already in the database.`,
+      [
+        { name: 'Resume (skip already discovered URLs)', value: 'resume' },
+        { name: 'Start from scratch (clear existing pages)', value: 'reset' },
+      ],
+      config.name
+    );
+
+    if (mode === 'clear') return;
 
     if (mode === 'reset') {
       dbDeletePagesByProject(project.id);

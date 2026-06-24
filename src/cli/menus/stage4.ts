@@ -8,28 +8,37 @@ import { translateProject } from '../../stages/stage2/index.js';
 import { diffSite } from '../../stages/stage4/differ.js';
 import { getPendingChanges, ignoreChange, markReTranslated } from '../../stages/stage4/reporter.js';
 import { logger } from '../../utils/logger.js';
-import { clearScreen, printStageHeader } from '../ui.js';
+import { clearScreen, printStageHeader, promptSelect } from '../ui.js';
 
 // ─── Stage 4 Menu ─────────────────────────────────────────────────────────────
 
 export async function stage4Menu(projectSlug: string, config: ProjectConfig): Promise<void> {
   clearScreen();
+  let lastChoiceValue = 'check';
   while (true) {
-    printStageHeader('Stage 4: Monitoring', config.name);
-    const { action } = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'action',
-        message: chalk.bold('Stage 4: Monitoring'),
-        choices: [
-          { name: 'Check site for changes', value: 'check' },
-          { name: 'View pages with detected changes', value: 'view-changes' },
-          { name: 'Re-process page with changes', value: 'reprocess' },
-          { name: 'Mark changes as ignored', value: 'ignore' },
-          { name: chalk.gray('← Back'), value: 'back' },
-        ],
-      },
-    ]);
+    const action = await promptSelect(
+      'Stage 4: Monitoring',
+      [
+        { name: 'Check site for changes', value: 'check' },
+        { name: 'View pages with detected changes', value: 'view-changes' },
+        { name: 'Re-process page with changes', value: 'reprocess' },
+        { name: 'Mark changes as ignored', value: 'ignore' },
+        { name: '← Back', value: 'back' },
+      ],
+      config.name,
+      lastChoiceValue
+    );
+
+    if (action === 'clear') {
+      clearScreen();
+      continue;
+    }
+
+    if (action === 'back') {
+      return;
+    }
+
+    lastChoiceValue = action;
 
     switch (action) {
       case 'check':
@@ -44,8 +53,6 @@ export async function stage4Menu(projectSlug: string, config: ProjectConfig): Pr
       case 'ignore':
         await ignoreChanges(projectSlug);
         break;
-      case 'back':
-        return;
     }
   }
 }

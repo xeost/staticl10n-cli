@@ -14,7 +14,7 @@ import {
 } from '../../core/db.js';
 import { translateProject } from '../../stages/stage2/index.js';
 import { logger } from '../../utils/logger.js';
-import { clearScreen, printStageHeader } from '../ui.js';
+import { clearScreen, printStageHeader, promptSelect } from '../ui.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -24,6 +24,14 @@ function formatElapsed(ms: number): string {
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ${s % 60}s`;
   return `${Math.floor(m / 60)}h ${m % 60}m ${s % 60}s`;
+}
+
+function formatEstimations(elapsedMs: number, done: number, total: number): string {
+  if (done <= 0 || elapsedMs <= 0 || done >= total) return '';
+  const avg = elapsedMs / done;
+  const remainingMs = avg * (total - done);
+  const totalMs = avg * total;
+  return ` (ETA: ${formatElapsed(remainingMs)} | Total: ${formatElapsed(totalMs)})`;
 }
 
 function formatTokens(n: number): string {
@@ -37,27 +45,36 @@ function formatTokens(n: number): string {
 
 export async function stage2Menu(projectSlug: string, config: ProjectConfig): Promise<void> {
   clearScreen();
+  let lastChoiceValue = 'translate-all';
   while (true) {
-    printStageHeader('Stage 2: Translation', config.name);
-    const { action } = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'action',
-        message: chalk.bold('Stage 2: Translation'),
-        choices: [
-          { name: 'Translate all captured pages', value: 'translate-all' },
-          { name: 'Translate pending pages only', value: 'translate-pending' },
-          { name: 'Translate to a specific language', value: 'translate-lang' },
-          { name: 'Re-translate specific page', value: 'retranslate' },
-          { name: 'View translation status by language', value: 'status' },
-          { name: 'Purge cache (this project)', value: 'purge-cache-project' },
-          { name: 'Purge cache (all projects)', value: 'purge-cache-all' },
-          { name: 'Purge code block cache (this project)', value: 'purge-cache-code' },
-          { name: 'View cache statistics', value: 'cache-stats' },
-          { name: chalk.gray('← Back'), value: 'back' },
-        ],
-      },
-    ]);
+    const action = await promptSelect(
+      'Stage 2: Translation',
+      [
+        { name: 'Translate all captured pages', value: 'translate-all' },
+        { name: 'Translate pending pages only', value: 'translate-pending' },
+        { name: 'Translate to a specific language', value: 'translate-lang' },
+        { name: 'Re-translate specific page', value: 'retranslate' },
+        { name: 'View translation status by language', value: 'status' },
+        { name: 'Purge cache (this project)', value: 'purge-cache-project' },
+        { name: 'Purge cache (all projects)', value: 'purge-cache-all' },
+        { name: 'Purge code block cache (this project)', value: 'purge-cache-code' },
+        { name: 'View cache statistics', value: 'cache-stats' },
+        { name: '← Back', value: 'back' },
+      ],
+      config.name,
+      lastChoiceValue
+    );
+
+    if (action === 'clear') {
+      clearScreen();
+      continue;
+    }
+
+    if (action === 'back') {
+      return;
+    }
+
+    lastChoiceValue = action;
 
     switch (action) {
       case 'translate-all':
@@ -87,8 +104,6 @@ export async function stage2Menu(projectSlug: string, config: ProjectConfig): Pr
       case 'cache-stats':
         viewCacheStats(projectSlug);
         break;
-      case 'back':
-        return;
     }
   }
 }
@@ -134,6 +149,23 @@ async function runTranslation(
   let pageStart = Date.now();
   let grandTotalTokens = 0;
   let currentPagePrevTokens = 0;
+  let currentFragmentsDone = 0;
+  let currentFragmentsTotal = 0;
+  let currentUrl = '';
+  let currentLang = '';
+
+  const timerInterval = setInterval(() => {
+    if (currentFragmentsTotal > 0) {
+      const elapsed = Date.now() - pageStart;
+      const estimations = formatEstimations(elapsed, currentFragmentsDone, currentFragmentsTotal);
+      bar.update(barDone, {
+        url: currentUrl ? `[${currentLang}] ${currentUrl.slice(-50)}` : '',
+        fragment: `${currentFragmentsDone}/${currentFragmentsTotal} fragments`,
+        elapsed: formatElapsed(elapsed) + estimations,
+        tokens: formatTokens(grandTotalTokens)
+      });
+    }
+  }, 100);
 
   try {
     const result = await translateProject(
@@ -145,12 +177,20 @@ async function runTranslation(
         barDone = done;
         pageStart = Date.now();
         currentPagePrevTokens = 0;
+        currentFragmentsDone = 0;
+        currentFragmentsTotal = 0;
+        currentUrl = url;
+        currentLang = lang;
         bar.update(done, { url: `[${lang}] ${url.slice(-50)}`, fragment: '-', elapsed: '0.0s', tokens: formatTokens(grandTotalTokens) });
       },
       (done, fragmentTotal, tokens, _url, _lang) => {
         grandTotalTokens += tokens - currentPagePrevTokens;
         currentPagePrevTokens = tokens;
-        bar.update(barDone, { fragment: `${done}/${fragmentTotal} fragments`, elapsed: formatElapsed(Date.now() - pageStart), tokens: formatTokens(grandTotalTokens) });
+        currentFragmentsDone = done;
+        currentFragmentsTotal = fragmentTotal;
+        const elapsed = Date.now() - pageStart;
+        const estimations = formatEstimations(elapsed, done, fragmentTotal);
+        bar.update(barDone, { fragment: `${done}/${fragmentTotal} fragments`, elapsed: formatElapsed(elapsed) + estimations, tokens: formatTokens(grandTotalTokens) });
       },
     );
     bar.stop();
@@ -162,18 +202,20 @@ async function runTranslation(
   } catch (err) {
     bar.stop();
     logger.error(`Translation failed: ${(err as Error).message}`);
+  } finally {
+    clearInterval(timerInterval);
   }
 }
 
 async function runTranslateLanguage(projectSlug: string, config: ProjectConfig): Promise<void> {
-  const { lang } = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'lang',
-      message: 'Select target language:',
-      choices: config.translation.targetLanguages,
-    },
-  ]);
+  const lang = await promptSelect(
+    'Select target language',
+    config.translation.targetLanguages.map((l) => ({ name: l, value: l })),
+    config.name
+  );
+
+  if (lang === 'clear') return;
+
   await runTranslation(projectSlug, config, [lang]);
 }
 

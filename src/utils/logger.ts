@@ -30,15 +30,16 @@ function writeToFile(level: LogLevel, message: string): void {
 
 function formatMessage(level: LogLevel, message: string): string {
   const ts = new Date().toLocaleTimeString();
+  const prefix = '\r\x1B[K';
   switch (level) {
     case 'debug':
-      return chalk.gray(`[${ts}] DEBUG ${message}`);
+      return `${prefix}${chalk.gray(`[${ts}] DEBUG ${message}`)}`;
     case 'info':
-      return chalk.cyan(`[${ts}] INFO  ${message}`);
+      return `${prefix}${chalk.cyan(`[${ts}] INFO  ${message}`)}`;
     case 'warn':
-      return chalk.yellow(`[${ts}] WARN  ${message}`);
+      return `${prefix}${chalk.yellow(`[${ts}] WARN  ${message}`)}`;
     case 'error':
-      return chalk.red(`[${ts}] ERROR ${message}`);
+      return `${prefix}${chalk.red(`[${ts}] ERROR ${message}`)}`;
   }
 }
 
@@ -66,12 +67,12 @@ export const logger = {
   },
 
   success(message: string): void {
-    console.log(chalk.green(`✓ ${message}`));
+    console.log(`\r\x1B[K${chalk.green(`✓ ${message}`)}`);
     writeToFile('info', `[SUCCESS] ${message}`);
   },
 
   /** Print a plain message without any prefix (used for titles/banners). */
   plain(message: string): void {
-    console.log(message);
+    console.log(`\r\x1B[K${message}`);
   },
 };

@@ -644,6 +644,19 @@ function verifyPlaceholderIntegrity(
         isValidStructure = false;
         return false; // break each
       }
+      const entry = placeholders.get(n);
+      if (entry) {
+        const isVoid = entry.close === '';
+        const isAtomic = entry.innerHTML !== undefined;
+        if (isVoid || isAtomic) {
+          const innerText = $(el).text().trim();
+          if (innerText.length > 0) {
+            logger.warn(`Integrity check failed: placeholder id="${idAttr}" is void/atomic and must remain empty, but contains text: "${innerText}"`);
+            isValidStructure = false;
+            return false; // break each
+          }
+        }
+      }
     }
   });
 
