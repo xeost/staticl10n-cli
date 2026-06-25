@@ -131,7 +131,7 @@ export async function translateFragments(
       durationMs: Date.now() - startTime,
       retries: pageRetries,
       failedCount: pageFailedCount,
-    });
+    }, config);
   }
 
   return { fragments, translatedTexts, cacheHits, cacheMisses };
@@ -254,7 +254,7 @@ async function translateBatch(
               status: 'SUCCESS',
               prompt: promptText,
               response: callText,
-            });
+            }, config);
             break modelLoop;
           }
 
@@ -282,7 +282,7 @@ async function translateBatch(
             prompt: promptText,
             response: callText ?? '',
             reason: integrityResult.reason,
-          });
+          }, config);
           attemptsLog.push({
             model,
             attempt,
@@ -312,7 +312,7 @@ async function translateBatch(
             prompt: promptText || (fragment.isAttribute ? buildAttributePrompt(fragment.outerHtml, config.translation.sourceLanguage, targetLanguage, config) : buildPlaceholderPrompt(fragment.outerHtml, config.translation.sourceLanguage, targetLanguage, config)),
             response: `[ERROR] ${errorMsg}`,
             reason: errorMsg,
-          });
+          }, config);
           attemptsLog.push({
             model,
             attempt,
@@ -350,7 +350,7 @@ async function translateBatch(
         logger.warn(`FAILED: fragment ${fragment.id} failed to translate (kept original)`);
       }
       logger.warn(`Keeping original for fragment ${fragment.id} after all models failed (not cached).`);
-      writeFailureLog(projectId, fragment, targetLanguage, attemptsLog);
+      writeFailureLog(projectId, fragment, targetLanguage, attemptsLog, config);
     }
 
     onFragmentDone?.(fragmentTokens, fragment.id);
@@ -381,9 +381,10 @@ function writeFailureLog(
     error?: string;
     integrityFailed?: boolean;
   }>,
+  config: ProjectConfig,
 ): void {
   try {
-    const logDir = path.join(process.cwd(), 'data', 'logs');
+    const logDir = path.join(config.paths.tmp, 'logs');
     const logPath = path.join(logDir, 'translation_failures.log');
     fs.ensureDirSync(logDir);
 
@@ -1069,24 +1070,26 @@ export function translateJsonLdValues(
 
 // ─── Development Debug Logging ──────────────────────────────────────────────────
 
-let debugLogPath: string | null = null;
+const debugLogPaths = new Map<string, string>();
 
 /**
  * Returns the path to the translation debug log file for the current CLI run.
- * Initialised once per run under data/logs/ if DEBUG_TRANSLATION_LOG=true.
+ * Initialised once per run under config.paths.tmp/logs/ if DEBUG_TRANSLATION_LOG=true.
  */
-function getDebugLogPath(): string | null {
+function getDebugLogPath(config: ProjectConfig): string | null {
   if (process.env.DEBUG_TRANSLATION_LOG !== 'true') return null;
-  if (!debugLogPath) {
+  let logPath = debugLogPaths.get(config.slug);
+  if (!logPath) {
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
     const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
     const timeStr = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-    const logDir = path.join(process.cwd(), 'data', 'logs');
+    const logDir = path.join(config.paths.tmp, 'logs');
     fs.ensureDirSync(logDir);
-    debugLogPath = path.join(logDir, `translation_debug_${dateStr}_${timeStr}.log`);
+    logPath = path.join(logDir, `translation_debug_${dateStr}_${timeStr}.log`);
+    debugLogPaths.set(config.slug, logPath);
   }
-  return debugLogPath;
+  return logPath;
 }
 
 interface DebugAttemptInput {
@@ -1110,8 +1113,8 @@ interface DebugAttemptInput {
 /**
  * Appends a detailed attempt log for a single fragment translation.
  */
-function writeDebugAttemptLog(input: DebugAttemptInput): void {
-  const logPath = getDebugLogPath();
+function writeDebugAttemptLog(input: DebugAttemptInput, config: ProjectConfig): void {
+  const logPath = getDebugLogPath(config);
   if (!logPath) return;
 
   const reasonLine = input.reason ? `REASON: ${input.reason}\n` : '';
@@ -1154,14 +1157,14 @@ interface DebugPageSummaryInput {
 /**
  * Appends a summary log when a page translation completes.
  */
-function writeDebugPageSummary(input: DebugPageSummaryInput): void {
-  const logPath = getDebugLogPath();
+function writeDebugPageSummary(input: DebugPageSummaryInput, config: ProjectConfig): void {
+  const logPath = getDebugLogPath(config);
   if (!logPath) return;
 
   const entry = `
-################################################################################
+###############################################################################
 ######################### PAGE TRANSLATION COMPLETE ############################
-################################################################################
+###############################################################################
 PROJECT: ${input.projectSlug}
 LANGUAGE: ${input.language}
 PAGE PATH: ${input.pagePath}
@@ -1170,8 +1173,8 @@ TOTAL TIME TAKEN: ${input.durationMs}ms
 TOTAL TOKENS: Input: ${input.inputTokens} | Output: ${input.outputTokens} | Total: ${input.totalTokens}
 TOTAL RETRIES: ${input.retries}
 FAILED FRAGMENTS (EXHAUSTED): ${input.failedCount}
-################################################################################
-################################################################################
+###############################################################################
+###############################################################################
 `;
   fs.appendFileSync(logPath, entry, 'utf-8');
 }
