@@ -305,7 +305,6 @@ async function runStage2Import(
 
             $orig('div[id]').each((_i, el) => {
               const id = $orig(el).attr('id')!;
-              const sourceText = $orig(el).html() ?? '';
               const transDiv = $trans(`div[id="${id}"]`);
               if (transDiv.length === 0) {
                 fileErrors.push(`[${file}] Missing block <div id="${id}">`);
@@ -314,9 +313,11 @@ async function runStage2Import(
                 return;
               }
 
-              const translatedText = transDiv.html() ?? '';
               const lookupF = fragmentLookup.get(id);
               if (!lookupF) return;
+
+              const sourceText = lookupF.outerHtml;
+              const translatedText = (transDiv.html() ?? '').trim();
 
               const validation = verifyPlaceholderIntegrity(translatedText, sourceText, lookupF.placeholders);
               if (validation.passed) {
@@ -331,16 +332,19 @@ async function runStage2Import(
               const transObj = yamlLoad(fs.readFileSync(transPath, 'utf-8')) as Record<string, string> || {};
               const origObj = yamlLoad(fs.readFileSync(origPath, 'utf-8')) as Record<string, string> || {};
 
-              for (const [id, sourceText] of Object.entries(origObj)) {
-                const translatedText = transObj[id];
+              for (const [id, _originalValue] of Object.entries(origObj)) {
                 const lookupF = fragmentLookup.get(id);
                 if (!lookupF) continue;
 
-                if (translatedText === undefined) {
+                const translatedValue = transObj[id];
+                if (translatedValue === undefined) {
                   fileErrors.push(`[${file}] Missing YAML key "${id}"`);
                   failedFragments.push(lookupF);
                   continue;
                 }
+
+                const sourceText = lookupF.outerHtml;
+                const translatedText = String(translatedValue).trim();
 
                 const validation = verifyPlaceholderIntegrity(translatedText, sourceText, lookupF.placeholders);
                 if (validation.passed) {
