@@ -33,12 +33,12 @@ crawl:
 
 paths:
   # Where processed + pre-personalized HTML files are saved (Stage 1 output)
-  original: /Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/astro/original
+  original: /Users/fabian/Documents/CodeProjects/github.com/esdocu/astro/astro/original
   # Where raw Playwright HTML is saved (used for reprocessing without re-crawling)
-  raw: /Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/astro/raw
+  raw: /Users/fabian/Documents/CodeProjects/github.com/esdocu/astro/astro/raw
   # Output directories per target language
   translations:
-      es: /Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/astro/es
+      es: /Users/fabian/Documents/CodeProjects/github.com/esdocu/astro/astro/es
 
 translation:
   # Translation provider: "ollama" (local, no API key) or "gemini" (Google Gemini API)
@@ -98,7 +98,13 @@ personalization:
   # Rules applied in Stage 3, AFTER translation
   # Use to inject banners, replace copyright text, rename page titles, etc.
   # Add "languages: [es, fr]" to a rule to restrict it to specific language outputs.
-  postTranslation: []
+  postTranslation:
+    - type: replace_text
+      selector: "head > title"
+      search: Astro
+      replace: Astro en Español
+      languages: ["es"]
+      description: Rename page titles for the Spanish translation
 
 # How to handle static assets (CSS, JS, images, fonts): "copy" (default) or "symlink"
 copyAssetsMode: copy

@@ -33,12 +33,12 @@ crawl:
 
 paths:
   # Where processed + pre-personalized HTML files are saved (Stage 1 output)
-  original: /Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/astro-docs/original
+  original: /Users/fabian/Documents/CodeProjects/github.com/esdocu/astro/astro-docs/original
   # Where raw Playwright HTML is saved (used for reprocessing without re-crawling)
-  raw: /Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/astro-docs/raw
+  raw: /Users/fabian/Documents/CodeProjects/github.com/esdocu/astro/astro-docs/raw
   # Output directories per target language
   translations:
-      es: /Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/astro-docs/es
+      es: /Users/fabian/Documents/CodeProjects/github.com/esdocu/astro/astro-docs/es
 
 translation:
   # Translation provider: "ollama" (local, no API key) or "gemini" (Google Gemini API)
