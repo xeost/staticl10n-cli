@@ -43,7 +43,7 @@ const BLOCK_TAGS = new Set([
 ]);
 
 // Tags whose full content should be excluded from translation extraction
-const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'head', 'meta', 'link', 'pre', 'code']);
+const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'head', 'meta', 'link', 'pre']);
 
 // Leaf-content tags that are always extracted if they have significant text,
 // bypassing the text-ratio check (which fails when class/href attributes inflate markup length)

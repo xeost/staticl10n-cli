@@ -48,8 +48,8 @@ translation:
   # Model name or list of models for multi-model fallback (tried in order on failure)
   # Comment out any model to temporarily disable it
   model:
-    - llama3.1
-    - gemma3:12b
+    # - llama3.1
+    # - gemma3:12b
     - gemma4
   # Language code of the source content (ISO 639-1, e.g. "en", "es", "fr")
   sourceLanguage: en
