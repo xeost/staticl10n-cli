@@ -169,9 +169,9 @@ async function runCrawlDiscover(projectSlug: string, config: ProjectConfig): Pro
 
 async function runCrawlImport(projectSlug: string, config: ProjectConfig): Promise<void> {
   const project = dbGetProjectBySlug(projectSlug)!;
-  const tmpDir = '/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/data/tmp';
-  const mdPath = path.join(tmpDir, `detected-paths-${projectSlug}.md`);
-  const jsonPath = path.join(tmpDir, `crawler-metadata-${projectSlug}.json`);
+  const crawlerTmpDir = path.join(config.paths.tmp, 'crawler');
+  const mdPath = path.join(crawlerTmpDir, 'detected.md');
+  const jsonPath = path.join(crawlerTmpDir, 'metadata.json');
 
   if (!fs.existsSync(mdPath) || !fs.existsSync(jsonPath)) {
     logger.error(`No crawler results found for project "${projectSlug}". Please run "Detect URLs: Stage 1 (Discover & Save)" first.`);

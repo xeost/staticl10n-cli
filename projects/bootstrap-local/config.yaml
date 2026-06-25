@@ -36,6 +36,8 @@ paths:
   original: /Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/bootstrap-local/original
   # Where raw Playwright HTML is saved (used for reprocessing without re-crawling)
   raw: /Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/bootstrap-local/raw
+  # Where temporary metadata and cache files are saved
+  tmp: /Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/bootstrap-local/tmp
   # Output directories per target language
   translations:
       es: /Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/temp-public-static/bootstrap-local/es

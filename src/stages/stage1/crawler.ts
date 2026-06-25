@@ -521,12 +521,12 @@ export async function crawlSiteDiscover(
     await browser.close();
   }
 
-  // Ensure tmp directory exists
-  const tmpDir = '/Users/fabian/Documents/CodeProjects/github.com/xeost/staticl10n-cli/data/tmp';
-  fs.ensureDirSync(tmpDir);
+  // Ensure crawler directory inside config.paths.tmp exists
+  const crawlerTmpDir = path.join(config.paths.tmp, 'crawler');
+  fs.ensureDirSync(crawlerTmpDir);
 
-  const mdPath = path.join(tmpDir, `detected-paths-${projectSlug}.md`);
-  const jsonPath = path.join(tmpDir, `crawler-metadata-${projectSlug}.json`);
+  const mdPath = path.join(crawlerTmpDir, 'detected.md');
+  const jsonPath = path.join(crawlerTmpDir, 'metadata.json');
 
   // Write paths to mdPath, one per line (using only pathnames)
   const pathnames = Array.from(pagesMetadata.keys()).sort();

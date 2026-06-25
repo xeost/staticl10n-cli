@@ -71,6 +71,7 @@ export interface ProjectConfig {
   paths: {
     original: string;
     raw: string;
+    tmp: string;
     translations: Record<string, string>;
   };
   translation: {
@@ -292,6 +293,8 @@ paths:
   original: ${yamlStr(config.paths.original)}
   # Where raw Playwright HTML is saved (used for reprocessing without re-crawling)
   raw: ${yamlStr(config.paths.raw)}
+  # Where temporary metadata and cache files are saved
+  tmp: ${yamlStr(config.paths.tmp)}
   # Output directories per target language
   translations:
 ${translationPaths}
@@ -388,6 +391,7 @@ export function buildDefaultConfig(opts: {
     paths: {
       original: path.join(opts.outputBaseDir, 'original'),
       raw: path.join(opts.outputBaseDir, 'raw'),
+      tmp: path.join(opts.outputBaseDir, 'tmp'),
       translations: translationPaths,
     },
     translation: {
