@@ -13,6 +13,7 @@ import {
   dbPurgeTranslationCache,
 } from '../../core/db.js';
 import { translateProject } from '../../stages/stage2/index.js';
+import { runManualTranslationStage } from '../../stages/stage2/manual.js';
 import { logger } from '../../utils/logger.js';
 import { clearScreen, printStageHeader, promptSelect } from '../ui.js';
 
@@ -54,6 +55,10 @@ export async function stage2Menu(projectSlug: string, config: ProjectConfig): Pr
         { name: 'Translate pending pages only', value: 'translate-pending' },
         { name: 'Translate to a specific language', value: 'translate-lang' },
         { name: 'Re-translate specific page', value: 'retranslate' },
+        { name: 'Translate all captured pages (manual)', value: 'manual-translate-all' },
+        { name: 'Translate pending pages only (manual)', value: 'manual-translate-pending' },
+        { name: 'Translate to a specific language (manual)', value: 'manual-translate-lang' },
+        { name: 'Re-translate specific page (manual)', value: 'manual-retranslate' },
         { name: 'View translation status by language', value: 'status' },
         { name: 'Purge cache (this project)', value: 'purge-cache-project' },
         { name: 'Purge cache (all projects)', value: 'purge-cache-all' },
@@ -88,6 +93,18 @@ export async function stage2Menu(projectSlug: string, config: ProjectConfig): Pr
         break;
       case 'retranslate':
         await runRetranslate(projectSlug, config);
+        break;
+      case 'manual-translate-all':
+        await runManualTranslation(projectSlug, config, false);
+        break;
+      case 'manual-translate-pending':
+        await runManualTranslation(projectSlug, config, true);
+        break;
+      case 'manual-translate-lang':
+        await runManualTranslateLanguage(projectSlug, config);
+        break;
+      case 'manual-retranslate':
+        await runManualRetranslate(projectSlug, config);
         break;
       case 'status':
         viewTranslationStatus(projectSlug, config);
@@ -321,4 +338,101 @@ function viewCacheStats(projectSlug: string): void {
   const stats = dbGetCacheStats(project.id);
   console.log(chalk.bold('\nTranslation Cache Statistics:\n'));
   console.log(`  Total cached entries: ${chalk.cyan(stats.total)}`);
+}
+
+async function runManualTranslation(
+  projectSlug: string,
+  config: ProjectConfig,
+  pendingOnly = false,
+): Promise<void> {
+  const project = dbGetProjectBySlug(projectSlug)!;
+  let pages = dbGetPagesByProject(project.id, ['captured', 'personalized']);
+  const languages = config.translation.targetLanguages;
+
+  if (pendingOnly) {
+    pages = pages.filter((page) => {
+      const translations = dbGetTranslationsByPage(page.id);
+      return languages.some(
+        (l) => !translations.find((t) => t.language === l && t.status === 'translated'),
+      );
+    });
+  }
+
+  if (pages.length === 0) {
+    logger.info('No pages found for manual translation.');
+    return;
+  }
+
+  await runManualTranslationStage(projectSlug, config, {
+    pages,
+    languages,
+    actionName: pendingOnly ? 'pending pages (manual)' : 'all pages (manual)',
+  });
+}
+
+async function runManualTranslateLanguage(
+  projectSlug: string,
+  config: ProjectConfig,
+): Promise<void> {
+  const project = dbGetProjectBySlug(projectSlug)!;
+  const pages = dbGetPagesByProject(project.id, ['captured', 'personalized']);
+
+  if (pages.length === 0) {
+    logger.info('No pages captured to translate.');
+    return;
+  }
+
+  const { lang } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'lang',
+      message: 'Select language for manual translation:',
+      choices: config.translation.targetLanguages,
+    },
+  ]);
+
+  await runManualTranslationStage(projectSlug, config, {
+    pages,
+    languages: [lang],
+    actionName: `language ${lang} (manual)`,
+  });
+}
+
+async function runManualRetranslate(
+  projectSlug: string,
+  config: ProjectConfig,
+): Promise<void> {
+  const project = dbGetProjectBySlug(projectSlug)!;
+  const pages = dbGetPagesByProject(project.id, ['captured', 'personalized', 'translated']);
+
+  if (pages.length === 0) {
+    logger.info('No pages found to translate.');
+    return;
+  }
+
+  const choices = [
+    { name: '← Back', value: 'back' },
+    ...pages.map((p) => ({ name: `[${p.status}] ${p.url}`, value: p.url })),
+  ];
+
+  const { url } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'url',
+      message: 'Select page for manual re-translation:',
+      choices,
+      pageSize: 15,
+    },
+  ]);
+
+  if (url === 'back') return;
+
+  const targetPage = pages.find((p) => p.url === url)!;
+
+  await runManualTranslationStage(projectSlug, config, {
+    pages: [targetPage],
+    languages: config.translation.targetLanguages,
+    actionName: `page ${url} (manual)`,
+    targetPageUrl: url,
+  });
 }

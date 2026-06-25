@@ -41,6 +41,7 @@ export async function translateFragments(
   targetLanguage: string,
   config: ProjectConfig,
   onFragmentProgress?: (done: number, total: number, tokens: number, fragmentId: string) => void,
+  isManualMode = false,
 ): Promise<TranslationBatch> {
   const translatedTexts = new Map<string, string>();
   const toTranslate: HtmlFragment[] = [];
@@ -63,6 +64,13 @@ export async function translateFragments(
   }
 
   if (toTranslate.length === 0) {
+    return { fragments, translatedTexts, cacheHits, cacheMisses };
+  }
+
+  if (isManualMode) {
+    for (const fragment of toTranslate) {
+      translatedTexts.set(fragment.id, fragment.outerHtml);
+    }
     return { fragments, translatedTexts, cacheHits, cacheMisses };
   }
 
@@ -592,7 +600,7 @@ function hasPromptLeakage(text: string): boolean {
  * Checks that every placeholder number (id attribute) and tag name
  * appears correctly in the translation.
  */
-function verifyPlaceholderIntegrity(
+export function verifyPlaceholderIntegrity(
   translated: string,
   originalText: string,
   placeholders: Map<number, PlaceholderEntry> | undefined,
@@ -784,6 +792,7 @@ export async function translateCodeComments(
   targetLanguage: string,
   projectId: number,
   config: ProjectConfig,
+  isManualMode = false,
 ): Promise<{ html: string; cacheHits: number; cacheMisses: number }> {
   const $ = cheerio.load(html);
 
@@ -839,7 +848,9 @@ export async function translateCodeComments(
       translatedBodies = redistributeLines(cached, group.lines.length);
       cacheHits++;
     } else {
-      if (bodyText.trim()) {
+      if (isManualMode) {
+        translatedBodies = bodies;
+      } else if (bodyText.trim()) {
         const models = getModels(config);
         for (const model of models) {
           try {

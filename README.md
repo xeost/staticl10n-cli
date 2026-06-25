@@ -404,7 +404,34 @@ Results are saved to the database and printed to stdout. Pending changes can the
 
 9. **Dual injection** — translated HTML is written directly into the output file (for SEO / first paint) AND stored in a per-page `translations.js` dictionary (for Next.js rehydration defense).
 
-10. **Meta & SEO** — `<title>`, `<meta name="description">`, Open Graph, Twitter Card, JSON-LD structured data, `<html lang>`, and `hreflang` alternate links are all processed.
+    10. **Meta & SEO** — `<title>`, `<meta name="description">`, Open Graph, Twitter Card, JSON-LD structured data, `<html lang>`, and `hreflang` alternate links are all processed.
+
+---
+
+## Manual Translation Mode
+
+If you prefer to translate pages manually instead of using automated LLM providers, you can use the **(manual)** options in **Stage 2: Translation**. This workflow operates in three distinct stages:
+
+### 1. Generate Manual Files (Stage 1)
+- Generates HTML and YAML part files under `{paths.tmp}/translation/{language}/` with filenames like `{page_id}-part{x}.html` and `{page_id}-part{x}.yaml`.
+- Each part file is limited to ~100 lines for easy editing.
+  - Plain, inline, single-line fragments are written to `.yaml` files in key-value format.
+  - Multiline fragments or fragments containing HTML placeholders (e.g. `<span id="N">`) are written to `.html` files wrapped in `<div id="{id}">` tags.
+- Identical original source files are written to `{paths.tmp}/translation/{language}-original/` to prevent mixing or losing original source text references.
+- Pre-fills the translation files under `{language}/` with existing cached translations (if available) or the original source text.
+
+### 2. Import & Validate (Stage 2)
+- Reads the edited translation files from `{paths.tmp}/translation/{language}/`.
+- Validates the translations against the original files in `{language}-original/` to ensure all HTML placeholder tags are preserved.
+- If validation succeeds, the translations are saved to the database cache under the model name `'manual'` and the files are deleted.
+- If any fragments fail validation, the CLI reports the placeholder/structural errors and regenerates new part files containing **only** the failed fragments for you to correct.
+
+### 3. Build Pages (Stage 3)
+- Verifies that no manual translation part files are left in `{paths.tmp}/translation/{language}/`.
+- Compiles the final localized website pages exactly like automated translation, but retrieves translations exclusively from the database cache (falling back to original text for any uncached fragments).
+
+### Cache Priority
+By adding `manual` to the top of `model_priorities` in `data/global-config.yaml`, manually imported translations take the highest priority and will never be overwritten or updated by other models during automated translation runs.
 
 ---
 

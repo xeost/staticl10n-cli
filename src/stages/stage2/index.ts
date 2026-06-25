@@ -46,6 +46,7 @@ export async function translateProject(
   targetPageUrl?: string,
   onProgress?: (url: string, lang: string, done: number, total: number) => void,
   onFragmentProgress?: (done: number, total: number, tokens: number, url: string, lang: string, fragmentId: string) => void,
+  isManualMode = false,
 ): Promise<TranslationResult> {
   const project = dbGetProjectBySlug(projectSlug);
   if (!project) throw new Error(`Project "${projectSlug}" not found`);
@@ -109,6 +110,7 @@ export async function translateProject(
           onFragmentProgress
             ? (done, total, tokens, fragmentId) => onFragmentProgress(done, total, tokens, pageRow.url, lang, fragmentId)
             : undefined,
+          isManualMode,
         );
         totalCacheHits += cacheHits;
         totalCacheMisses += cacheMisses;
@@ -122,7 +124,7 @@ export async function translateProject(
         // Translate code comment spans inside <pre><code> blocks
         if (config.translation.translateCodeBlockComments !== false) {
           const { html: commentHtml, cacheHits: chHits, cacheMisses: chMisses } =
-            await translateCodeComments(translatedHtml, lang, project.id, config);
+            await translateCodeComments(translatedHtml, lang, project.id, config, isManualMode);
           translatedHtml = commentHtml;
           totalCacheHits += chHits;
           totalCacheMisses += chMisses;
@@ -133,7 +135,7 @@ export async function translateProject(
           const cached = getCachedTranslation(project.id, text, lang, config);
           if (cached) return cached;
           const singleFragment = [{ id: 'meta_0', outerHtml: text, isAttribute: true }];
-          const result = await translateFragments(project.id, pageRow.path, singleFragment, lang, config);
+          const result = await translateFragments(project.id, pageRow.path, singleFragment, lang, config, undefined, isManualMode);
           return result.translatedTexts.get('meta_0') ?? text;
         };
 
