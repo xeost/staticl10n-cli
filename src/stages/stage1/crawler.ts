@@ -13,6 +13,27 @@ import { logger } from '../../utils/logger.js';
 import { isInternalUrl, normalizeUrl, urlToFilePath } from '../../utils/paths.js';
 import { type DetectedRedirect, mergeDetectedRedirects } from './redirects.js';
 
+function parseMetaRefresh(html: string): string | null {
+  try {
+    const $ = cheerio.load(html);
+    const refreshContent = $('meta[http-equiv="refresh" i]').attr('content');
+    if (refreshContent) {
+      const match = refreshContent.match(/^\d+;\s*url=(.+)$/i);
+      if (match) {
+        let target = match[1].trim();
+        if ((target.startsWith('"') && target.endsWith('"')) ||
+            (target.startsWith("'") && target.endsWith("'"))) {
+          target = target.slice(1, -1);
+        }
+        return target;
+      }
+    }
+  } catch {
+    // Ignore
+  }
+  return null;
+}
+
 // ─── Crawler ──────────────────────────────────────────────────────────────────
 
 export interface CrawlResult {
@@ -105,6 +126,42 @@ export async function crawlSite(
       try {
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         httpStatus = response?.status() ?? 0;
+
+        let rawHtml = '';
+        if (response && httpStatus < 400) {
+          try {
+            rawHtml = await response.text();
+          } catch {
+            // Ignore
+          }
+        }
+
+        const metaRedirectTarget = rawHtml ? parseMetaRefresh(rawHtml) : null;
+        if (metaRedirectTarget) {
+          try {
+            const absoluteRedirect = new URL(metaRedirectTarget, url).href;
+            const normalizedRedirect = normalizeUrl(absoluteRedirect, config.crawl);
+            const fromPath = new URL(url).pathname;
+            const toPath = new URL(normalizedRedirect).pathname;
+
+            if (fromPath !== toPath) {
+              redirectMap.set(fromPath, {
+                from: fromPath,
+                to: toPath,
+                statusCode: 307,
+                detectedDuring: 'crawl',
+              });
+              logger.info(`Detected meta-refresh redirect: ${fromPath} → ${toPath}`);
+
+              if (!visited.has(normalizedRedirect)) {
+                queue.push(normalizedRedirect);
+              }
+            }
+          } catch (err) {
+            logger.warn(`Failed to process meta-refresh redirect target "${metaRedirectTarget}": ${(err as Error).message}`);
+          }
+          continue;
+        }
 
         const finalUrl = page.url();
         const normalizedFinal = normalizeUrl(finalUrl, config.crawl);
@@ -351,6 +408,42 @@ export async function crawlSiteDiscover(
       try {
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         httpStatus = response?.status() ?? 0;
+
+        let rawHtml = '';
+        if (response && httpStatus < 400) {
+          try {
+            rawHtml = await response.text();
+          } catch {
+            // Ignore
+          }
+        }
+
+        const metaRedirectTarget = rawHtml ? parseMetaRefresh(rawHtml) : null;
+        if (metaRedirectTarget) {
+          try {
+            const absoluteRedirect = new URL(metaRedirectTarget, url).href;
+            const normalizedRedirect = normalizeUrl(absoluteRedirect, config.crawl);
+            const fromPath = new URL(url).pathname;
+            const toPath = new URL(normalizedRedirect).pathname;
+
+            if (fromPath !== toPath) {
+              redirectMap.set(fromPath, {
+                from: fromPath,
+                to: toPath,
+                statusCode: 307,
+                detectedDuring: 'crawl',
+              });
+              logger.info(`Detected meta-refresh redirect: ${fromPath} → ${toPath}`);
+
+              if (!visited.has(normalizedRedirect)) {
+                queue.push(normalizedRedirect);
+              }
+            }
+          } catch (err) {
+            logger.warn(`Failed to process meta-refresh redirect target "${metaRedirectTarget}": ${(err as Error).message}`);
+          }
+          continue;
+        }
 
         const finalUrl = page.url();
         const normalizedFinal = normalizeUrl(finalUrl, config.crawl);

@@ -25,6 +25,7 @@ export async function stage1Menu(projectSlug: string, config: ProjectConfig): Pr
       [
         { name: 'Detect URLs: Stage 1 (Discover & Save)', value: 'crawl-discover' },
         { name: 'Detect URLs: Stage 2 (Import paths)', value: 'crawl-import' },
+        { name: 'Import path manually', value: 'import-manual' },
         { name: 'Capture pending pages', value: 'capture' },
         { name: 'Re-capture specific page', value: 'recapture' },
         { name: 'Apply pre-personalization (on original/)', value: 'pre-personalize' },
@@ -55,6 +56,9 @@ export async function stage1Menu(projectSlug: string, config: ProjectConfig): Pr
         break;
       case 'crawl-import':
         await runCrawlImport(projectSlug, config);
+        break;
+      case 'import-manual':
+        await runImportManual(projectSlug, config);
         break;
       case 'capture':
         await runCapture(projectSlug, config);
@@ -112,11 +116,15 @@ async function runCrawlDiscover(projectSlug: string, config: ProjectConfig): Pro
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(true);
     process.stdin.resume();
-    process.stdin.setEncoding('utf8');
 
-    const onData = (key: string): void => {
+    const onData = (key: Buffer): void => {
       // q / Q / Escape / Ctrl+C
-      if (key === 'q' || key === 'Q' || key === '\u001b' || key === '\u0003') {
+      if (
+        key[0] === 0x71 || // 'q'
+        key[0] === 0x51 || // 'Q'
+        key[0] === 0x1b || // Escape
+        key[0] === 0x03    // Ctrl+C
+      ) {
         controller.abort();
       }
     };
@@ -128,7 +136,6 @@ async function runCrawlDiscover(projectSlug: string, config: ProjectConfig): Pro
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
       }
-      process.stdin.pause();
     };
   }
 
@@ -235,6 +242,79 @@ async function runCrawlImport(projectSlug: string, config: ProjectConfig): Promi
   }
 }
 
+async function runImportManual(projectSlug: string, config: ProjectConfig): Promise<void> {
+  const project = dbGetProjectBySlug(projectSlug)!;
+
+  const { inputPath } = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'inputPath',
+      message: 'Enter path to import (e.g. /about or https://example.com/about, leave empty to cancel):',
+    },
+  ]);
+
+  const trimmed = inputPath.trim();
+  if (!trimmed) {
+    logger.info('Import cancelled.');
+    return;
+  }
+
+  let absoluteUrl = '';
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    absoluteUrl = trimmed;
+  } else {
+    let relativePath = trimmed;
+    if (!relativePath.startsWith('/')) {
+      relativePath = '/' + relativePath;
+    }
+    absoluteUrl = new URL(relativePath, config.url).href;
+  }
+
+  let inputOrigin = '';
+  const projectOrigin = new URL(config.url).origin;
+  try {
+    inputOrigin = new URL(absoluteUrl).origin;
+  } catch {
+    logger.error('Invalid URL or path format.');
+    return;
+  }
+
+  if (projectOrigin !== inputOrigin) {
+    logger.error(`The URL "${absoluteUrl}" does not belong to the project origin "${projectOrigin}".`);
+    return;
+  }
+
+  const normalizedUrl = normalizeUrl(absoluteUrl, config.crawl);
+  const spinner = ora(`Checking URL existence: ${normalizedUrl}...`).start();
+
+  let exists = false;
+  let httpStatus = 0;
+
+  try {
+    const res = await fetch(normalizedUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      },
+    });
+    httpStatus = res.status;
+    exists = res.ok || (res.status >= 300 && res.status < 400);
+  } catch (err) {
+    spinner.fail(`Connection check failed: ${(err as Error).message}`);
+    return;
+  }
+
+  if (!exists) {
+    spinner.fail(`URL does not exist on the source website (HTTP Status ${httpStatus}).`);
+    return;
+  }
+
+  spinner.succeed(`URL verified (HTTP Status ${httpStatus}).`);
+  const pagePath = urlToFilePath(normalizedUrl);
+  dbInsertPageIfNew(project.id, normalizedUrl, pagePath, 'pending', httpStatus);
+  logger.success(`Path successfully imported as pending: ${normalizedUrl}`);
+}
+
 async function runCapture(projectSlug: string, config: ProjectConfig): Promise<void> {
   const project = dbGetProjectBySlug(projectSlug)!;
   const pending = dbGetPagesByProject(project.id).filter(
@@ -279,9 +359,15 @@ async function runRecapture(projectSlug: string, config: ProjectConfig): Promise
       type: 'list',
       name: 'url',
       message: 'Select page to re-capture:',
-      choices: pages.map((p) => ({ name: `[${p.status}] ${p.url}`, value: p.url })),
+      choices: [
+        ...pages.map((p) => ({ name: `[${p.status}] ${p.url}`, value: p.url })),
+        new inquirer.Separator(),
+        { name: '← Back', value: 'back' },
+      ],
     },
   ]);
+
+  if (url === 'back') return;
 
   const spinner = ora(`Re-capturing ${url}...`).start();
   try {
@@ -347,12 +433,17 @@ function viewRedirects(projectSlug: string): void {
 async function runRegenRedirects(projectSlug: string, config: ProjectConfig): Promise<void> {
   const spinner = ora('Regenerating _redirects files...').start();
   try {
-    const outputDirs = [config.paths.original, ...Object.values(config.paths.translations)];
-    for (const dir of outputDirs) {
-      writeRedirectsTo(dir, projectSlug);
+    // Write original unrewritten redirects to original/
+    writeRedirectsTo(config.paths.original, projectSlug);
+
+    // Write rewritten redirects to each translation output directory
+    for (const [lang, dir] of Object.entries(config.paths.translations)) {
+      if (dir) {
+        writeRedirectsTo(dir, projectSlug, config.pathRewrite);
+      }
     }
     spinner.stop();
-    logger.success(`_redirects written to ${outputDirs.length} director(ies).`);
+    logger.success(`_redirects written to original and target directories.`);
   } catch (err) {
     spinner.stop();
     logger.error(`Failed to regenerate _redirects: ${(err as Error).message}`);

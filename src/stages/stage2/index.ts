@@ -23,6 +23,7 @@ import { processMeta } from './meta.js';
 import { generateSitemap } from './sitemap.js';
 import { translateCodeComments, translateFragments, translateJsonLdValues } from './translator.js';
 import { applyRule } from '../stage1/personalizer.js';
+import { writeRedirectsTo } from '../stage1/redirects.js';
 
 // ─── Stage 2 Orchestrator ─────────────────────────────────────────────────────
 
@@ -252,7 +253,7 @@ export async function translateProject(
     }
   }
 
-  // Generate sitemap.xml for each language using ALL translated pages in the DB
+  // Generate sitemap.xml and _redirects for each language using ALL translated pages in the DB
   for (const lang of languages) {
     const outputDir = config.paths.translations[lang];
     if (!outputDir) continue;
@@ -261,6 +262,8 @@ export async function translateProject(
       generateSitemap(outputDir, config.url, config.targetUrls[lang] ?? '', allTranslatedUrls, config.pathRewrite);
       logger.debug(`Sitemap written: ${outputDir}/sitemap.xml (${allTranslatedUrls.length} URLs)`);
     }
+    writeRedirectsTo(outputDir, project.slug, config.pathRewrite);
+    logger.debug(`Redirects written: ${outputDir}/_redirects`);
   }
 
   return { pagesTranslated, pagesFailed, cacheHits: totalCacheHits, cacheMisses: totalCacheMisses };
@@ -383,12 +386,14 @@ export async function reapplyPostProcessing(
       }
     }
 
-    // Regenerate sitemap.xml for this language
+    // Regenerate sitemap.xml and rewritten _redirects for this language
     const allUrls = dbGetTranslatedPageUrls(project.id, lang);
     if (allUrls.length > 0) {
       generateSitemap(outputDir, config.url, config.targetUrls[lang] ?? '', allUrls, config.pathRewrite);
       logger.debug(`Sitemap regenerated: ${outputDir}/sitemap.xml (${allUrls.length} URLs)`);
     }
+    writeRedirectsTo(outputDir, project.slug, config.pathRewrite);
+    logger.debug(`Redirects regenerated: ${outputDir}/_redirects`);
   }
 
   return { pagesProcessed, pagesFailed };
@@ -431,11 +436,8 @@ function buildTranslatedUrlSet(urls: Iterable<string>, config: ProjectConfig): S
 // ─── Asset Sync ───────────────────────────────────────────────────────────────
 
 /**
- * Copies or symlinks all asset content from original/ to the language directory.
- *
- * Assets now live at their natural root-relative paths (_next/, favicons/, _assets/, etc.)
- * rather than being nested under a single _assets/ prefix, so we sync the entire
- * originalDir tree.  HTML files are excluded — the translation step writes those.
+ * Copies or symlinks all asset content recursively from original/ to the language directory.
+ * Excludes HTML pages, sitemaps, and redirects to avoid polluting target directories.
  */
 async function syncAssets(
   originalDir: string,
@@ -444,25 +446,39 @@ async function syncAssets(
 ): Promise<void> {
   if (!fs.existsSync(originalDir)) return;
 
-  if (mode === 'symlink') {
-    // Create a symlink per top-level entry (skip HTML files)
-    const entries = fs.readdirSync(originalDir, { withFileTypes: true });
+  const recursiveSync = (srcDir: string, destDir: string) => {
+    const entries = fs.readdirSync(srcDir, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.isFile() && entry.name.endsWith('.html')) continue;
-      const src = path.join(originalDir, entry.name);
-      const dst = path.join(targetDir, entry.name);
-      if (!fs.existsSync(dst)) {
-        fs.ensureDirSync(path.dirname(dst));
-        fs.symlinkSync(src, dst);
+      const srcPath = path.join(srcDir, entry.name);
+      const destPath = path.join(destDir, entry.name);
+
+      if (entry.isDirectory()) {
+        recursiveSync(srcPath, destPath);
+      } else if (entry.isFile()) {
+        const nameLower = entry.name.toLowerCase();
+        // Ignore html files, redirects, and sitemaps
+        if (nameLower.endsWith('.html') || nameLower.endsWith('.htm')) continue;
+        if (nameLower === '_redirects' || nameLower === 'sitemap.xml') continue;
+
+        let pathExists = false;
+        try {
+          fs.lstatSync(destPath);
+          pathExists = true;
+        } catch {}
+
+        if (!pathExists) {
+          fs.ensureDirSync(destDir);
+          if (mode === 'symlink') {
+            fs.symlinkSync(srcPath, destPath);
+          } else {
+            fs.copySync(srcPath, destPath);
+          }
+        }
       }
     }
-  } else {
-    // Copy everything; translated HTML will be written (and overwrite) separately
-    fs.copySync(originalDir, targetDir, {
-      overwrite: false,
-      filter: (src: string) => !src.endsWith('.html'),
-    });
-  }
+  };
+
+  recursiveSync(originalDir, targetDir);
 }
 
 export { extractFragments } from './extractor.js';

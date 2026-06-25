@@ -303,9 +303,18 @@ During the crawl (Stage 1), staticl10n intercepts HTTP 3xx responses via Playwri
 
 ### How it works
 
-1. **Detection** — for every URL visited, a `response` listener captures the first 3xx status code. If the final URL after navigation differs from the requested one, a redirect entry is recorded.
-2. **Storage** — redirects are persisted to `projects/<slug>/redirects.json` in a hosting-agnostic format. The file is merged on each crawl run, so re-crawls update existing entries.
-3. **Generation** — at the end of `Capture pending pages`, a `_redirects` file in Cloudflare Pages / Netlify format is written to `original/`. Stage 2 copies it to every language directory automatically.
+Redirects are handled across three distinct stages:
+
+1. **Detection & Storage (Stage 1: Discover & Save)**
+   - During the crawl discovery phase, staticl10n intercepts standard HTTP `3xx` redirects (via Playwright's `response` event listener) as well as client-side meta-refresh redirects (e.g. `<meta http-equiv="refresh" content="0;url=/target/">` parsed via cheerio from the response body).
+   - If a redirect is detected, the target URL is enqueued to continue crawling from it, and the redirect mapping is registered.
+   - Redirects are persisted to `projects/<slug>/redirects.json` in a hosting-agnostic format. The file is merged on each crawl run, so subsequent runs update existing entries without losing manually added ones.
+
+2. **Generation (Stage 1: Capture)**
+   - At the end of the `Capture pending pages` step, staticl10n reads `redirects.json` and writes a unified `_redirects` file (compatible with Netlify and Cloudflare Pages) to the `original/` directory.
+
+3. **Replication (Stage 2: Translation)**
+   - When translating the site, the `_redirects` file is automatically copied from the `original/` directory to all language output directories (`es/`, `fr/`, etc.), ensuring the redirects also function on the translated domains/paths.
 
 ### `redirects.json` schema
 

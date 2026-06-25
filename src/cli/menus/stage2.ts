@@ -237,9 +237,15 @@ async function runRetranslate(projectSlug: string, config: ProjectConfig): Promi
       type: 'list',
       name: 'url',
       message: 'Select page to re-translate:',
-      choices: pages.map((p) => ({ name: p.url, value: p.url })),
+      choices: [
+        ...pages.map((p) => ({ name: p.url, value: p.url })),
+        new inquirer.Separator(),
+        { name: '← Back', value: 'back' },
+      ],
     },
   ]);
+
+  if (url === 'back') return;
 
   const spinner = ora(`Translating ${url}...`).start();
   try {
@@ -254,7 +260,7 @@ async function runRetranslate(projectSlug: string, config: ProjectConfig): Promi
 
 function viewTranslationStatus(projectSlug: string, config: ProjectConfig): void {
   const project = dbGetProjectBySlug(projectSlug)!;
-  const pages = dbGetPagesByProject(project.id);
+  const pages = dbGetPagesByProject(project.id, ['captured', 'personalized']);
 
   console.log(chalk.bold('\nTranslation Status:\n'));
 

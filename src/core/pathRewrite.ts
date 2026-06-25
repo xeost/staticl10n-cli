@@ -13,8 +13,15 @@ import type { PathRewriteRule } from './config.js';
 export function rewritePath(pathname: string, rules: PathRewriteRule[] | undefined): string {
   if (!rules?.length) return pathname;
   let result = pathname;
+  const hasLeadingSlash = result.startsWith('/');
+  if (!hasLeadingSlash) {
+    result = '/' + result;
+  }
   for (const rule of rules) {
     result = result.replace(new RegExp(rule.pattern), rule.replacement);
+  }
+  if (!hasLeadingSlash && result.startsWith('/')) {
+    result = result.slice(1);
   }
   return result;
 }

@@ -1,0 +1,13 @@
+{
+  "detectedAt": "2026-06-25T17:07:27.378Z",
+  "totalRedirects": 1,
+  "redirects": [
+    {
+      "from": "/",
+      "to": "/en/getting-started",
+      "statusCode": 307,
+      "detectedDuring": "crawl"
+    }
+  ],
+  "manual": []
+}
