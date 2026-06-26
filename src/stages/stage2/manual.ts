@@ -275,6 +275,15 @@ async function runStage2Import(
         const pageLangDir = path.join(langDir, String(page.id));
         const pageOrigDir = path.join(origDir, String(page.id));
 
+        if (!fs.existsSync(pageLangDir)) {
+          if (fs.existsSync(pageOrigDir)) {
+            try {
+              fs.removeSync(pageOrigDir);
+            } catch {}
+          }
+          continue;
+        }
+
         const files = fs.existsSync(pageLangDir)
           ? fs.readdirSync(pageLangDir).filter(
               (f) => f.startsWith('part') && (f.endsWith('.html') || f.endsWith('.yaml'))
