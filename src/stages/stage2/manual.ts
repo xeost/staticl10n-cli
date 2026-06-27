@@ -91,6 +91,8 @@ async function runStage1Generate(
       fs.ensureDirSync(langDir);
       fs.ensureDirSync(origDir);
 
+      const exportedHashes = new Set<string>();
+
       for (const page of pages) {
         const originalHtmlPath = path.join(config.paths.original, page.path);
         if (!fs.existsSync(originalHtmlPath)) continue;
@@ -99,10 +101,18 @@ async function runStage1Generate(
         const { fragments } = extractFragments(originalHtml, config.translation.maxFragmentTokens);
 
         // Only include fragments that do not exist in cache with model 'manual'
+        // AND have not been exported to manual parts in this run yet
         const pendingFragments = fragments.filter((f) => {
           const hash = hashFragment(f.outerHtml);
           const cached = dbGetCachedTranslation(projectId, hash, lang);
-          return !(cached && cached.model === 'manual');
+          const isAlreadyCached = cached && cached.model === 'manual';
+          const isAlreadyExported = exportedHashes.has(hash);
+
+          if (!isAlreadyCached && !isAlreadyExported) {
+            exportedHashes.add(hash);
+            return true;
+          }
+          return false;
         });
 
         if (pendingFragments.length > 0) {
