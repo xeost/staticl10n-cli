@@ -87,7 +87,7 @@ personalization:
     - type: remove_element
       selector: "script[src*='google-analytics']"
       description: Remove Google Analytics
-  # Rules applied in Stage 3, AFTER translation
+  # Rules applied AFTER translation (applied automatically during translation/build for both AI and manual modes)
   # Use to inject banners, replace copyright text, rename page titles, etc.
   # Add "languages: [es, fr]" to a rule to restrict it to specific language outputs.
   postTranslation:

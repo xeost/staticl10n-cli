@@ -36,7 +36,7 @@ export async function applyPrePersonalization(
     return { pagesProcessed: 0, affectedByRule: {} };
   }
 
-  let pages = dbGetPagesByProject(project.id, 'captured');
+  let pages = dbGetPagesByProject(project.id, ['captured', 'personalized']);
   if (targetUrl) pages = pages.filter((p) => p.url === targetUrl);
   const affectedByRule: Record<string, number> = {};
 

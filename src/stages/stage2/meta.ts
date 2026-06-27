@@ -1,8 +1,57 @@
 import * as cheerio from 'cheerio';
 import type { ProjectConfig } from '../../core/config.js';
 import { rewritePath } from '../../core/pathRewrite.js';
+import type { HtmlFragment } from './extractor.js';
 
 // ─── Meta Tag Handler ─────────────────────────────────────────────────────────
+
+export const META_SELECTORS: Array<{ selector: string; attrName: string; id: string }> = [
+  { selector: 'meta[name="description"]', attrName: 'content', id: 'meta_desc' },
+  { selector: 'meta[property="og:title"]', attrName: 'content', id: 'meta_og_title' },
+  { selector: 'meta[property="og:description"]', attrName: 'content', id: 'meta_og_desc' },
+  { selector: 'meta[property="og:site_name"]', attrName: 'content', id: 'meta_og_site_name' },
+  { selector: 'meta[name="twitter:title"]', attrName: 'content', id: 'meta_twitter_title' },
+  { selector: 'meta[name="twitter:description"]', attrName: 'content', id: 'meta_twitter_desc' },
+];
+
+/**
+ * Extracts title and metadata tags text from original HTML to include them as manual translation fragments.
+ */
+export function extractMetaFragments(html: string): HtmlFragment[] {
+  const $ = cheerio.load(html);
+  const metaFrags: HtmlFragment[] = [];
+
+  // 1. Title
+  const titleEl = $('head > title');
+  if (titleEl.length) {
+    const original = titleEl.text().trim();
+    if (original) {
+      metaFrags.push({
+        id: 'meta_title',
+        outerHtml: original,
+        isAttribute: false,
+      });
+    }
+  }
+
+  // 2. Meta tags
+  for (const item of META_SELECTORS) {
+    const el = $(item.selector);
+    if (el.length) {
+      const original = el.attr(item.attrName) ?? '';
+      if (original.trim()) {
+        metaFrags.push({
+          id: item.id,
+          outerHtml: original.trim(),
+          isAttribute: true,
+          attributeName: item.attrName,
+        });
+      }
+    }
+  }
+
+  return metaFrags;
+}
 
 /**
  * Updates the HTML lang attribute, translates SEO meta tags,
@@ -30,21 +79,12 @@ export async function processMeta(
   }
 
   // Translate key meta tags
-  const metaSelectors: Array<[string, string]> = [
-    ['meta[name="description"]', 'content'],
-    ['meta[property="og:title"]', 'content'],
-    ['meta[property="og:description"]', 'content'],
-    ['meta[property="og:site_name"]', 'content'],
-    ['meta[name="twitter:title"]', 'content'],
-    ['meta[name="twitter:description"]', 'content'],
-  ];
-
-  for (const [selector, attrName] of metaSelectors) {
-    const el = $(selector);
+  for (const item of META_SELECTORS) {
+    const el = $(item.selector);
     if (el.length) {
-      const original = el.attr(attrName) ?? '';
+      const original = el.attr(item.attrName) ?? '';
       if (original.trim()) {
-        el.attr(attrName, await translateText(original));
+        el.attr(item.attrName, await translateText(original));
       }
     }
   }

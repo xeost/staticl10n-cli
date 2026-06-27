@@ -328,7 +328,7 @@ personalization:
   # Rules applied at the end of Stage 1, BEFORE translation
   # Use to remove analytics, tracking scripts, cookie banners, ads, etc.
   preTranslation: ${yamlPersonalizationRules(config.personalization.preTranslation, '    ')}
-  # Rules applied in Stage 3, AFTER translation
+  # Rules applied AFTER translation (applied automatically during translation/build for both AI and manual modes)
   # Use to inject banners, replace copyright text, rename page titles, etc.
   # Add "languages: [es, fr]" to a rule to restrict it to specific language outputs.
   postTranslation: ${yamlPersonalizationRules(config.personalization.postTranslation, '    ')}

@@ -11,6 +11,7 @@ import { hashFragment, storeCachedTranslation } from './cache.js';
 import { verifyPlaceholderIntegrity } from './translator.js';
 import { extractFragments } from './extractor.js';
 import { translateProject } from './index.js';
+import { extractMetaFragments } from './meta.js';
 import { logger } from '../../utils/logger.js';
 import type { HtmlFragment } from './extractor.js';
 
@@ -99,10 +100,12 @@ async function runStage1Generate(
 
         const originalHtml = fs.readFileSync(originalHtmlPath, 'utf-8');
         const { fragments } = extractFragments(originalHtml, config.translation.maxFragmentTokens);
+        const metaFragments = extractMetaFragments(originalHtml);
+        const allFragments = [...fragments, ...metaFragments];
 
         // Only include fragments that do not exist in cache with model 'manual'
         // AND have not been exported to manual parts in this run yet
-        const pendingFragments = fragments.filter((f) => {
+        const pendingFragments = allFragments.filter((f) => {
           const hash = hashFragment(f.outerHtml);
           const cached = dbGetCachedTranslation(projectId, hash, lang);
           const isAlreadyCached = cached && cached.model === 'manual';
@@ -277,8 +280,10 @@ async function runStage2Import(
 
         const originalHtml = fs.readFileSync(originalHtmlPath, 'utf-8');
         const { fragments } = extractFragments(originalHtml, config.translation.maxFragmentTokens);
+        const metaFragments = extractMetaFragments(originalHtml);
+        const allFragments = [...fragments, ...metaFragments];
         const fragmentLookup = new Map<string, HtmlFragment>();
-        for (const f of fragments) {
+        for (const f of allFragments) {
           fragmentLookup.set(f.id, f);
         }
 

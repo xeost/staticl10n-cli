@@ -195,6 +195,23 @@ export async function translateProject(
           fs.writeFileSync(patchPath, patchContent, 'utf-8');
         }
 
+        // Apply postTranslation personalization rules
+        const postRules = config.personalization.postTranslation;
+        if (postRules.length > 0) {
+          const $rules = cheerio.load(translatedHtml);
+          let modified = false;
+          for (const rule of postRules) {
+            if (rule.languages && !rule.languages.includes(lang)) continue;
+            const count = applyRule($rules, rule);
+            if (count > 0) {
+              modified = true;
+            }
+          }
+          if (modified) {
+            translatedHtml = $rules.html();
+          }
+        }
+
         // Save translated HTML
         const outputHtmlPath = path.join(outputDir, outputPath);
         fs.ensureDirSync(path.dirname(outputHtmlPath));
