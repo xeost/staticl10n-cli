@@ -303,7 +303,7 @@ function buildSelector(el: Element): string {
   while (current && current.type === 'tag') {
     let selector = current.tagName.toLowerCase();
     if (current.attribs?.id) {
-      selector += `#${current.attribs.id}`;
+      selector += `[id="${current.attribs.id.replace(/"/g, '\\"')}"]`;
       parts.unshift(selector);
       break;
     }

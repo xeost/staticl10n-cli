@@ -1,0 +1,142 @@
+# Display name of the project (shown in the interactive UI)
+name: React
+
+# Unique identifier — also used as the folder name under projects/
+slug: react
+
+# URL of the source site to crawl and translate
+url: "https://react.dev"
+
+# Deployed URLs for each translated language (used to generate hreflang tags and rewrite links)
+targetUrls:
+  es: react.esdocu.com
+
+# Site type: "generic" (Hugo, Astro, VitePress, Jekyll…) or "nextjs" (Next.js app with React hydration)
+siteType: nextjs
+
+crawl:
+  # Milliseconds to wait between page requests (reduces server load)
+  delayMs: 1500
+  # Additional random delay per request (helps avoid bot detection)
+  delayJitterMs: 500
+  # Maximum number of pages to crawl (set to a high value to crawl everything)
+  maxPages: 5000
+  # Blocklist mode: skip URLs whose pathname contains any of these strings
+  # Use this to exclude sections like /blog/, /api/, /admin/, other language prefixes, etc.
+  ignorePatterns: []
+  # Strip trailing slashes from crawled URLs for consistent deduplication
+  normalizeTrailingSlash: true
+  # Remove query parameters from crawled URLs (keeps ?lang=, ?v=... out of the page list)
+  stripQueryParams: true
+  # Extra delay (ms) after page hydration — increase for JS-heavy sites like Next.js
+  postHydrationDelayMs: 800
+
+paths:
+  # Where processed + pre-personalized HTML files are saved (Stage 1 output)
+  original: /Users/fabian/Documents/CodeProjects/github.com/esdocu/react/original
+  # Where raw Playwright HTML is saved (used for reprocessing without re-crawling)
+  raw: /Users/fabian/Documents/CodeProjects/github.com/esdocu/react/raw
+  # Where temporary metadata and cache files are saved
+  tmp: /Users/fabian/Documents/CodeProjects/github.com/esdocu/react/tmp
+  # Output directories per target language
+  translations:
+      es: /Users/fabian/Documents/CodeProjects/github.com/esdocu/react/es
+
+translation:
+  # Translation provider: "ollama" (local, no API key) or "gemini" (Google Gemini API)
+  provider: ollama
+  # Base URL of the local Ollama server (only used when provider is "ollama")
+  ollamaUrl: "http://localhost:11434"
+  # Model name or list of models for multi-model fallback (tried in order on failure)
+  # Comment out any model to temporarily disable it
+  model: 
+    - llama3.1
+    - gemma4
+  # Language code of the source content (ISO 639-1, e.g. "en", "es", "fr")
+  sourceLanguage: en
+  # Target languages to translate into (must match keys in targetUrls and paths.translations)
+  targetLanguages: ["es"]
+  # Number of HTML fragments sent to the model in a single API call
+  batchSize: 20
+  # Maximum token count per HTML fragment before it is split into smaller pieces
+  maxFragmentTokens: 2000
+  # Retries per model before moving to the next one in the list (default: 3)
+  maxRetries: 3
+  # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
+  cacheExpiry: -1
+  # Optional context injected into the translation prompt (describe the site for better accuracy)
+  context: "Official documentation for React, a popular JavaScript library for building user interfaces. Covers components, props, state, hooks (useState, useEffect, useContext, etc.), context, refs, effects, performance optimization, and server components."
+  # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
+  preserveTerms:
+    - React
+    - JavaScript
+    - TypeScript
+    - HTML
+    - CSS
+    - JSX
+    - TSX
+    - npm
+    - pnpm
+    - yarn
+    - Node.js
+    - Deno
+    - Bun
+    - Webpack
+    - Turbopack
+    - SSR
+    - SSG
+    - CSR
+    - RSC
+    - API
+    - CLI
+    - JSON
+    - YAML
+    - DOM
+    - Hooks
+    - props
+    - state
+    - Ref
+    - Effect
+    - Context
+    - useState
+    - useEffect
+    - useContext
+    - useReducer
+    - useMemo
+    - useCallback
+    - useRef
+    - useTransition
+    - useId
+    - MDX
+    - Markdown
+    - Tailwind CSS
+  # Set to true to translate comment spans inside <pre><code> blocks (default: true)
+  translateCodeBlockComments: true
+
+personalization:
+  # Rules applied at the end of Stage 1, BEFORE translation
+  # Use to remove analytics, tracking scripts, cookie banners, ads, etc.
+  preTranslation: []
+  # Rules applied AFTER translation (applied automatically during translation/build for both AI and manual modes)
+  # Use to inject banners, replace copyright text, rename page titles, etc.
+  # Add "languages: [es, fr]" to a rule to restrict it to specific language outputs.
+  postTranslation:
+    - type: replace_text
+      selector: "head > title"
+      search: React
+      replace: React en Español
+      languages: ["es"]
+      description: Rename page titles for the Spanish translation
+
+# How to handle static assets (CSS, JS, images, fonts): "copy" (default) or "symlink"
+copyAssetsMode: copy
+
+# Optional: regex rules to rewrite URL pathnames at output time (output files, links, sitemap, hreflang).
+# Useful when crawling a language-prefixed site (e.g. /en/…) but publishing without the prefix.
+# Example: { pattern: "^/en/", replacement: "/" } → /en/getting-started/ becomes /getting-started/
+pathRewrite: []
+
+# Optional: map sibling-project domains to their translated equivalents (per language).
+# Links in translated HTML pointing to a mapped domain are rewritten to the target language URL.
+# Example: links to https://docs.astro.build become https://astro-docs.esdocu.com in Spanish output.
+domainMap: {}

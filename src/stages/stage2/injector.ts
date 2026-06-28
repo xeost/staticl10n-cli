@@ -98,10 +98,18 @@ export function generateRuntimePatch(
       // Map original attribute value → translated value
       attributeDict[fragment.outerHtml] = translated;
     } else {
-      // Map data-sl-id → translated innerHTML
-      const $t = cheerio.load(translated);
-      const firstChild = $t('body').children().first();
-      const inner = (firstChild.length > 0 ? firstChild.html() : $t('body').html()) ?? translated;
+      // Reconstruct full HTML (restoring img/svg/etc. from placeholders) before
+      // storing in the runtime patch dictionary. Without this, the MutationObserver
+      // would set innerHTML to placeholder text like "<1/>" which the browser
+      // renders as an empty unknown element, making images disappear.
+      let inner: string;
+      if (fragment.placeholders && fragment.placeholders.size > 0) {
+        inner = reconstructFromPlaceholders(translated, fragment.placeholders);
+      } else {
+        const $t = cheerio.load(translated);
+        const firstChild = $t('body').children().first();
+        inner = (firstChild.length > 0 ? firstChild.html() : $t('body').html()) ?? translated;
+      }
       fragmentDict[fragment.id] = inner;
     }
   }
@@ -131,13 +139,20 @@ export function generateRuntimePatch(
     });
   }
 
+  // Returns false if the element contains interactive children (buttons, inputs, etc.).
+  // Setting innerHTML on such elements creates new DOM nodes disconnected from React's
+  // fiber tree, which breaks event handlers like the theme toggle button.
+  function isSafeToReplace(el) {
+    return !el.querySelector('button, input, select, textarea, [role="button"], [tabindex]');
+  }
+
   function walk(node) {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     var tag = node.tagName && node.tagName.toLowerCase();
     if (tag === 'script' || tag === 'style' || tag === 'noscript') return;
     if (node.hasAttribute('data-sl-id')) {
       var id = node.getAttribute('data-sl-id');
-      if (F[id] !== undefined) node.innerHTML = F[id];
+      if (F[id] !== undefined && isSafeToReplace(node)) node.innerHTML = F[id];
       node.querySelectorAll('[alt],[title],[placeholder],[aria-label],[aria-description]').forEach(translateAttributes);
       return;
     }
@@ -150,7 +165,7 @@ export function generateRuntimePatch(
   function applyAll() {
     observer.disconnect();
     entries.forEach(function(e) {
-      if (e.el.isConnected) e.el.innerHTML = F[e.id];
+      if (e.el.isConnected && isSafeToReplace(e.el)) e.el.innerHTML = F[e.id];
     });
     document.querySelectorAll('[alt],[title],[placeholder],[aria-label],[aria-description]').forEach(translateAttributes);
     observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
@@ -174,7 +189,10 @@ export function generateRuntimePatch(
     });
 
     // Wait for React hydration to finish (browser idle), then re-apply and reveal.
-    // The timeout is a fallback: requestIdleCallback won't fire until React's tasks complete.
+    // IMPORTANT: applyAll() calls observer.observe() for the first time here, NOT at
+    // the top level. The observer must NOT run during React hydration — doing so would
+    // trigger applyAll() mid-hydration (setting innerHTML while React reconciles),
+    // which corrupts the fiber tree and breaks all event handlers (theme toggle, etc.).
     function afterHydration() {
       applyAll();
       reveal();
@@ -219,7 +237,8 @@ export function generateRuntimePatch(
     }
   });
 
-  observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+  // NOTE: observer.observe() is NOT called here. It is first started inside
+  // afterHydration() → applyAll() after React's hydration is complete.
 
 })();
 `;

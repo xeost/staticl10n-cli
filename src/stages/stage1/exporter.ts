@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs-extra';
 import path from 'path';
+import * as cheerio from 'cheerio';
 import { chromium } from 'playwright';
 import { GenericAdapter } from '../../adapters/generic.js';
 import { NextjsAdapter } from '../../adapters/nextjs.js';
@@ -13,7 +14,7 @@ import {
 } from '../../core/db.js';
 import { delayWithJitter } from '../../utils/delay.js';
 import { logger } from '../../utils/logger.js';
-import { urlToFilePath } from '../../utils/paths.js';
+import { assetUrlToLocalPath, urlToFilePath } from '../../utils/paths.js';
 import { downloadAssets, rewriteDownloadedCssUrls } from './downloader.js';
 import { writeRedirectsTo } from './redirects.js';
 
@@ -39,13 +40,12 @@ export async function capturePages(
 
   const adapter = resolveAdapter(config);
 
-  // Select pages to capture
-  let pages = dbGetPagesByProject(project.id).filter(
-    (p) => p.status === 'pending' || p.status === 'crawled',
-  );
-  if (targetUrl) {
-    pages = pages.filter((p) => p.url === targetUrl);
-  }
+  // Select pages to capture.
+  // When targeting a specific URL (re-capture), include already-captured pages too.
+  const allPages = dbGetPagesByProject(project.id);
+  let pages = targetUrl
+    ? allPages.filter((p) => p.url === targetUrl)
+    : allPages.filter((p) => p.status === 'pending' || p.status === 'crawled');
 
   const total = pages.length;
   let captured = 0;
@@ -78,6 +78,11 @@ export async function capturePages(
         fs.ensureDirSync(path.dirname(rawFilePath));
         fs.writeFileSync(rawFilePath, rawHtml, 'utf-8');
 
+        // Collect preload script URLs from rawHtml BEFORE processHTML removes them.
+        // Next.js removes <link rel="preload" as="script"> in processHTML, but those
+        // files are needed for React to hydrate code-split Client Components.
+        const preloadScriptUrls = collectPreloadScriptUrls(rawHtml, pageRow.url);
+
         // Run adapter-specific HTML post-processing
         let processedHtml = await adapter.processHTML(rawHtml, pageRow.url, config);
 
@@ -89,6 +94,27 @@ export async function capturePages(
           context,
         );
 
+        // Download preload script chunks (code-split components) that were removed by the adapter.
+        for (const scriptUrl of preloadScriptUrls) {
+          if (assetMap.has(scriptUrl)) continue;
+          const localRelPath = assetUrlToLocalPath(scriptUrl, pageRow.url);
+          const localAbsPath = path.join(config.paths.original, localRelPath);
+          if (fs.existsSync(localAbsPath)) {
+            assetMap.set(scriptUrl, localRelPath);
+            continue;
+          }
+          try {
+            const res = await context.request.get(scriptUrl);
+            if (res.ok()) {
+              fs.ensureDirSync(path.dirname(localAbsPath));
+              fs.writeFileSync(localAbsPath, await res.body());
+              assetMap.set(scriptUrl, localRelPath);
+            }
+          } catch {
+            logger.warn(`Failed to download preload script: ${scriptUrl}`);
+          }
+        }
+
         // Also download additional adapter-specific assets (e.g. Next.js fonts)
         const extraAssets = adapter.getAdditionalAssets(processedHtml, pageRow.url);
         for (const assetUrl of extraAssets) {
@@ -96,7 +122,6 @@ export async function capturePages(
             try {
               const res = await context.request.get(assetUrl);
               if (res.ok()) {
-                const { assetUrlToLocalPath } = await import('../../utils/paths.js');
                 const localRelPath = assetUrlToLocalPath(assetUrl, pageRow.url);
                 const localAbsPath = path.join(config.paths.original, localRelPath);
                 fs.ensureDirSync(path.dirname(localAbsPath));
@@ -201,4 +226,25 @@ function saveNextData(html: string, pagePath: string, outputDir: string): void {
 /** Resolves the output file path for a given URL and output directory. */
 export function resolveOutputPath(pageUrl: string, outputDir: string): string {
   return path.join(outputDir, urlToFilePath(pageUrl));
+}
+
+/**
+ * Collects same-origin <link rel="preload" as="script"> URLs from raw HTML.
+ * Used to download code-split chunks BEFORE the adapter removes these hints.
+ */
+function collectPreloadScriptUrls(html: string, pageUrl: string): string[] {
+  const $ = cheerio.load(html);
+  const base = new URL(pageUrl);
+  const urls: string[] = [];
+  $('link[rel="preload"][as="script"]').each((_i, el) => {
+    const href = $(el).attr('href');
+    if (!href) return;
+    try {
+      const abs = new URL(href, pageUrl);
+      if (abs.origin === base.origin) urls.push(abs.href);
+    } catch {
+      // ignore
+    }
+  });
+  return urls;
 }
