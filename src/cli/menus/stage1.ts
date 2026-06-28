@@ -7,7 +7,6 @@ import path from 'path';
 import type { ProjectConfig } from '../../core/config.js';
 import { dbDeletePagesByProject, dbGetPagesByProject, dbGetProjectBySlug, dbInsertPageIfNew } from '../../core/db.js';
 import { capturePages } from '../../stages/stage1/exporter.js';
-import { applyPrePersonalization } from '../../stages/stage1/personalizer.js';
 import { crawlSiteDiscover } from '../../stages/stage1/crawler.js';
 import { loadRedirectsFile, writeRedirectsTo, mergeDetectedRedirects } from '../../stages/stage1/redirects.js';
 import { normalizeUrl, urlToFilePath } from '../../utils/paths.js';
@@ -28,8 +27,6 @@ export async function stage1Menu(projectSlug: string, config: ProjectConfig): Pr
         { name: 'Import path manually', value: 'import-manual' },
         { name: 'Capture pending pages', value: 'capture' },
         { name: 'Re-capture specific page', value: 'recapture' },
-        { name: 'Apply pre-personalization (on original/)', value: 'pre-personalize' },
-        { name: 'Preview pre-personalization (dry-run)', value: 'pre-personalize-dry' },
         { name: 'View captured pages', value: 'view' },
         { name: 'View detected redirects', value: 'view-redirects' },
         { name: 'Regenerate _redirects file', value: 'regen-redirects' },
@@ -65,12 +62,6 @@ export async function stage1Menu(projectSlug: string, config: ProjectConfig): Pr
         break;
       case 'recapture':
         await runRecapture(projectSlug, config);
-        break;
-      case 'pre-personalize':
-        await runPrePersonalization(projectSlug, config, false);
-        break;
-      case 'pre-personalize-dry':
-        await runPrePersonalization(projectSlug, config, true);
         break;
       case 'view':
         viewPages(projectSlug);
@@ -384,28 +375,6 @@ async function runRecapture(projectSlug: string, config: ProjectConfig): Promise
   }
 }
 
-async function runPrePersonalization(
-  projectSlug: string,
-  config: ProjectConfig,
-  dryRun: boolean,
-): Promise<void> {
-  const spinner = ora(
-    dryRun ? 'Previewing pre-personalization...' : 'Applying pre-personalization...',
-  ).start();
-  try {
-    const result = await applyPrePersonalization(projectSlug, config, dryRun);
-    spinner.stop();
-    logger.success(
-      `${dryRun ? '[DRY RUN] ' : ''}Pre-personalization complete: ${result.pagesProcessed} pages processed.`,
-    );
-    for (const [rule, count] of Object.entries(result.affectedByRule)) {
-      console.log(`  ${chalk.cyan(rule)}: ${count} element(s) affected`);
-    }
-  } catch (err) {
-    spinner.stop();
-    logger.error(`Pre-personalization failed: ${(err as Error).message}`);
-  }
-}
 
 function viewRedirects(projectSlug: string): void {
   const data = loadRedirectsFile(projectSlug);

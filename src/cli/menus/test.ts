@@ -6,7 +6,6 @@ import path from 'path';
 import type { ProjectConfig } from '../../core/config.js';
 import { dbGetProjectBySlug, dbUpsertPage } from '../../core/db.js';
 import { capturePages } from '../../stages/stage1/exporter.js';
-import { applyPrePersonalization } from '../../stages/stage1/personalizer.js';
 import { translateProject } from '../../stages/stage2/index.js';
 import { applyPostPersonalization } from '../../stages/stage3/rules.js';
 import { logger } from '../../utils/logger.js';
@@ -107,10 +106,9 @@ export async function testMenu(projectSlug: string, config: ProjectConfig): Prom
       name: 'stages',
       message: 'Which stages to run (space to toggle, deselect all to cancel):',
       choices: [
-        { name: 'Stage 1 : Capture', value: 'capture', checked: true },
-        { name: 'Stage 1b: Pre-personalization', value: 'pre-personalize', checked: true },
-        { name: 'Stage 2 : Translation', value: 'translate', checked: true },
-        { name: 'Stage 3 : Post-personalization', value: 'post-personalize', checked: true },
+        { name: 'Stage 1: Capture', value: 'capture', checked: true },
+        { name: 'Stage 2: Translation', value: 'translate', checked: true },
+        { name: 'Stage 3: Post-personalization', value: 'post-personalize', checked: true },
       ],
     },
   ]);
@@ -152,39 +150,20 @@ async function runTestPipeline(
 
   // ── Stage 1: Capture ──────────────────────────────────────────────────────
   if (stages.includes('capture')) {
-    const spinner = ora(`[1/4] Capturing ${url}...`).start();
+    const spinner = ora(`[1/3] Capturing ${url}...`).start();
     try {
       const result = await capturePages(projectSlug, config, undefined, url);
       if (result.captured > 0) {
-        spinner.succeed(`[1/4] Captured → ${path.join(config.paths.original, pagePath)}`);
+        spinner.succeed(`[1/3] Captured → ${path.join(config.paths.original, pagePath)}`);
         results['capture'] = 'ok';
       } else {
-        spinner.fail('[1/4] Capture failed — check logs for details.');
+        spinner.fail('[1/3] Capture failed — check logs for details.');
         results['capture'] = 'failed';
         return; // Cannot continue without a captured page
       }
     } catch (err) {
-      spinner.fail(`[1/4] Capture error: ${(err as Error).message}`);
+      spinner.fail(`[1/3] Capture error: ${(err as Error).message}`);
       return;
-    }
-  }
-
-  // ── Stage 1b: Pre-personalization ─────────────────────────────────────────
-  if (stages.includes('pre-personalize')) {
-    const spinner = ora('[1b] Applying pre-personalization rules...').start();
-    try {
-      const result = await applyPrePersonalization(projectSlug, config, false, url);
-      spinner.succeed(
-        `[1b] Pre-personalization done — ${result.pagesProcessed} page, rules: ${
-          Object.entries(result.affectedByRule)
-            .map(([k, v]) => `${k}:${v}`)
-            .join(', ') || 'none'
-        }`,
-      );
-      results['pre-personalize'] = 'ok';
-    } catch (err) {
-      spinner.warn(`[1b] Pre-personalization error: ${(err as Error).message}`);
-      results['pre-personalize'] = 'error';
     }
   }
 
@@ -192,7 +171,7 @@ async function runTestPipeline(
   if (stages.includes('translate')) {
     const model = config.translation.model;
     let totalTokens = 0;
-    const spinner = ora(`[2/4] [${model}] Translating into: ${languages.join(', ')}...`).start();
+    const spinner = ora(`[2/3] [${model}] Translating into: ${languages.join(', ')}...`).start();
     const pageStart = Date.now();
 
     let fragmentsDone = 0;
@@ -204,7 +183,7 @@ async function runTestPipeline(
       const elapsed = Date.now() - pageStart;
       const estimations = formatEstimations(elapsed, fragmentsDone, fragmentsTotal);
       const fragIdStr = currentFragmentId ? ` · ${currentFragmentId}` : '';
-      spinner.text = `[2/4] [${model}] [${currentLang}] ${fragmentsDone}/${fragmentsTotal} fragments${fragIdStr} · ${formatElapsed(elapsed)}${estimations} · ${formatTokens(totalTokens)}`;
+      spinner.text = `[2/3] [${model}] [${currentLang}] ${fragmentsDone}/${fragmentsTotal} fragments${fragIdStr} · ${formatElapsed(elapsed)}${estimations} · ${formatTokens(totalTokens)}`;
     };
 
     const timerInterval = setInterval(() => {
@@ -228,7 +207,7 @@ async function runTestPipeline(
       );
       if (result.pagesTranslated > 0) {
         spinner.succeed(
-          `[2/4] Translation done in ${formatElapsed(Date.now() - pageStart)} · ${formatTokens(totalTokens)} — cache hits: ${result.cacheHits}, misses: ${result.cacheMisses}`,
+          `[2/3] Translation done in ${formatElapsed(Date.now() - pageStart)} · ${formatTokens(totalTokens)} — cache hits: ${result.cacheHits}, misses: ${result.cacheMisses}`,
         );
         results['translate'] = 'ok';
         for (const lang of languages) {
@@ -236,11 +215,11 @@ async function runTestPipeline(
           logger.info(`  [${lang}] → ${translatedPath}`);
         }
       } else {
-        spinner.fail('[2/4] Translation produced no output — check Ollama is running and accessible.');
+        spinner.fail('[2/3] Translation produced no output — check Ollama is running and accessible.');
         results['translate'] = 'failed';
       }
     } catch (err) {
-      spinner.fail(`[2/4] Translation error: ${(err as Error).message}`);
+      spinner.fail(`[2/3] Translation error: ${(err as Error).message}`);
       results['translate'] = 'error';
     } finally {
       clearInterval(timerInterval);
@@ -249,17 +228,17 @@ async function runTestPipeline(
 
   // ── Stage 3: Post-personalization ─────────────────────────────────────────
   if (stages.includes('post-personalize')) {
-    const spinner = ora('[3/4] Applying post-personalization rules...').start();
+    const spinner = ora('[3/3] Applying post-personalization rules...').start();
     try {
       const result = await applyPostPersonalization(projectSlug, config, false, url);
       spinner.succeed(
-        `[3/4] Post-personalization done — ${result.pagesProcessed} file(s) in: ${
+        `[3/3] Post-personalization done — ${result.pagesProcessed} file(s) in: ${
           result.directoriesProcessed.join(', ')
         }`,
       );
       results['post-personalize'] = 'ok';
     } catch (err) {
-      spinner.warn(`[3/4] Post-personalization error: ${(err as Error).message}`);
+      spinner.warn(`[3/3] Post-personalization error: ${(err as Error).message}`);
       results['post-personalize'] = 'error';
     }
   }
@@ -269,10 +248,9 @@ async function runTestPipeline(
   console.log(chalk.bold('  Test Summary'));
   console.log(chalk.gray('  ─────────────────────────────────────────'));
   const stageLabels: Record<string, string> = {
-    capture: '  Stage 1 : Capture',
-    'pre-personalize': '  Stage 1b: Pre-personalization',
-    translate: '  Stage 2 : Translation',
-    'post-personalize': '  Stage 3 : Post-personalization',
+    capture: '  Stage 1: Capture',
+    translate: '  Stage 2: Translation',
+    'post-personalize': '  Stage 3: Post-personalization',
   };
   for (const [key, label] of Object.entries(stageLabels)) {
     if (!(key in results)) continue;

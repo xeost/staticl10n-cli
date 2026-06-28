@@ -233,7 +233,7 @@ CREATE TABLE change_detections (
 - `targetUrls`: Se usa para generar las etiquetas `<link rel="alternate" hreflang="...">` en cada página y para reescribir URLs canónicas. No se usa para despliegue.
 - `paths.raw`: Directorio donde se guarda el HTML crudo de Playwright **antes** del procesamiento del adapter. Permite re-procesar sin re-capturar.
 - `translation.maxFragmentTokens`: Límite aproximado de tokens por fragmento HTML enviado a traducir. Fragmentos que excedan este límite se dividirán en sub-fragmentos en boundaries semánticas (hijos directos del elemento). La estimación de tokens usa una heurística simple: `Math.ceil(fragment.length / 4)`.
-- `personalization.preTranslation`: Reglas que se aplican al directorio `original/` al final de la Etapa 1, **antes** de traducir. Típicamente: eliminación de elementos innecesarios.
+- `personalization.preTranslation`: Reglas que se aplican **en memoria** al inicio de la Etapa 2, antes de extraer fragmentos para traducir. El directorio `original/` **nunca se modifica**. Esto permite modificar las reglas y re-ejecutar Stage 2 sin recapturar. Típicamente: eliminación de scripts de analytics, cookie banners, etc.
 - `personalization.postTranslation`: Reglas que se aplican a todos los directorios (original + idiomas) en la Etapa 3, **después** de traducir. Típicamente: inyección de contenido propio.
 - `crawl.normalizeTrailingSlash`: Si es `true`, normaliza las URLs eliminando trailing slashes para evitar duplicados (`/about/` → `/about`). Default `true`.
 - `crawl.stripQueryParams`: Si es `true`, elimina query parameters de las URLs descubiertas por el crawler para evitar duplicados. Default `true`.
@@ -243,7 +243,7 @@ CREATE TABLE change_detections (
 
 ## LAS CUATRO ETAPAS
 
-### ETAPA 1 — Captura, exportación estática y pre-personalización
+### ETAPA 1 — Captura y exportación estática
 
 1. **Detección de URLs (crawler)**: Usando `playwright` en modo headless, visitar la URL raíz del proyecto, extraer todos los `<a href>` internos, seguirlos recursivamente respetando el delay configurado, ignorar los patrones definidos en config. **Normalización de URLs**: antes de insertar en la BD, normalizar cada URL según la config (`normalizeTrailingSlash`, `stripQueryParams`) y deduplicar para evitar capturar la misma página dos veces. Registrar el `http_status` de cada respuesta; las páginas con errores HTTP (4xx, 5xx) se marcan con status `error` y se reportan al final del crawl sin detener el proceso. Los redirects (301/302) se siguen, se registra la URL final y se almacenan como redirecciones detectadas (ver paso 1b). Guardar cada URL encontrada en la tabla `pages` con status `pending`. Mostrar progreso en tiempo real en la CLI.
 
@@ -271,20 +271,20 @@ CREATE TABLE change_detections (
    - **generic**: Maneja la mayoría de los sitios estáticos (Hugo, Astro, VitePress, etc.) sin tratamiento especial más allá de la reescritura de paths de assets.
    - **nextjs**: Ver sección detallada más adelante. Corrige URLs `/_next/image`, maneja hidratación de React, previene SPA navigation, gestiona `next/font`, etc.
 
-4. **Pre-personalización**: Este es un paso **separado y manual** dentro del menú de Etapa 1 (no se ejecuta automáticamente al capturar). Aplica las reglas de `personalization.preTranslation` sobre los HTML del directorio `original/`. Esto garantiza que:
-   - No se envíen a traducir textos dentro de elementos que serán eliminados (ahorro de tokens de IA).
-   - El contenido traducido no incluirá scripts de analytics ni otros elementos no deseados.
-   - El flujo completo de la Etapa 1 requiere ejecutar dos acciones: primero "Capturar páginas", luego "Aplicar pre-personalización".
+4. **Generación de archivo `_redirects`**: Como paso final de la exportación estática, generar el archivo `_redirects` en el directorio `original/` a partir de `redirects.json`. Este archivo se genera en formato compatible con Cloudflare Pages / Netlify (una línea por regla: `/origen /destino statusCode`). La generación es automática al ejecutar la exportación y se repite para cada directorio de traducción en la Etapa 2 (adaptando los paths si fuera necesario). Ver sección "DETECCIÓN Y MANEJO DE REDIRECCIONES" para detalles completos.
 
-5. **Generación de archivo `_redirects`**: Como paso final de la exportación estática, generar el archivo `_redirects` en el directorio `original/` a partir de `redirects.json`. Este archivo se genera en formato compatible con Cloudflare Pages / Netlify (una línea por regla: `/origen /destino statusCode`). La generación es automática al ejecutar la exportación y se repite para cada directorio de traducción en la Etapa 2 (adaptando los paths si fuera necesario). Ver sección "DETECCIÓN Y MANEJO DE REDIRECCIONES" para detalles completos.
-
-6. Actualizar status de cada página en BD al completar.
+5. Actualizar status de cada página en BD al completar.
 
 ---
 
 ### ETAPA 2 — Traducción con Ollama
 
-1. **Extracción de fragmentos con placeholders**: Con `cheerio` extraer fragmentos de bloques de nivel (`<section>`, `<article>`, `<div>`, `<p>`, etc.) que contengan contenido traducible. Estrategia de extracción **greedy upward**:
+1. **Pre-personalización en memoria**: Antes de extraer fragmentos, aplicar las reglas de `personalization.preTranslation` sobre el HTML en memoria. El directorio `original/` **nunca se modifica** — permanece inmutable tras la captura. Esto garantiza que:
+   - No se envîn a traducir textos dentro de elementos que serán eliminados (ahorro de tokens).
+   - El contenido traducido no incluirá scripts de analytics ni otros elementos no deseados.
+   - Las reglas `preTranslation` pueden modificarse y re-aplicarse en cualquier momento simplemente volviendo a ejecutar Stage 2, sin necesidad de recapturar el sitio.
+
+2. **Extracción de fragmentos con placeholders**: Con `cheerio` extraer fragmentos de bloques de nivel (`<section>`, `<article>`, `<div>`, `<p>`, etc.) que contengan contenido traducible. Estrategia de extracción **greedy upward**:
    - Recorrer el DOM top-down.
    - Al encontrar un elemento con contenido textual significativo (ratio texto/markup > 60%), extraerlo como fragmento.
    - **No extraer hijos de un fragmento ya extraído** para evitar doble traducción.
@@ -309,9 +309,9 @@ CREATE TABLE change_detections (
 
    Agrupar fragmentos en batches según `batchSize`.
 
-2. **Consulta de caché**: Antes de enviar un batch a la IA, calcular el SHA-256 de cada fragmento y buscar en `translation_cache`. Los fragmentos con caché válida se reutilizan directamente sin consumir tokens de IA. Solo los fragmentos sin caché se envían a traducir. Tras recibir las traducciones, guardarlas en `translation_cache` para futuros usos.
+3. **Consulta de caché**: Antes de enviar un batch a la IA, calcular el SHA-256 de cada fragmento y buscar en `translation_cache`. Los fragmentos con caché válida se reutilizan directamente sin consumir tokens de IA. Solo los fragmentos sin caché se envían a traducir. Tras recibir las traducciones, guardarlas en `translation_cache` para futuros usos.
 
-3. **Traducción y Verificación**: Enviar cada batch de fragmentos nuevos a la API del proveedor configurado (Ollama o Google Gemini). El prompt instruye al modelo a:
+4. **Traducción y Verificación**: Enviar cada batch de fragmentos nuevos a la API del proveedor configurado (Ollama o Google Gemini). El prompt instruye al modelo a:
    - Traducir el texto al idioma destino.
    - **Preservar todos los marcadores numéricos exactamente como aparecen** (ej. `<1>`, `</1>`, `<2/>`).
    - Colocar cada marcador alrededor de las palabras traducidas equivalentes para mantener la gramática correcta.
@@ -322,7 +322,7 @@ CREATE TABLE change_detections (
    - Si falta algún marcador, descartar y reintentar la traducción (máximo `maxRetries` intentos, default 5).
    - Si todos los intentos fallan para el modelo actual, intentar con el siguiente modelo en el array `model` (multi-model fallback).
 
-4. **Reconstrucción HTML**: Una vez verificada la traducción, reemplazar los marcadores numéricos con los tags HTML originales guardados en el mapa:
+5. **Reconstrucción HTML**: Una vez verificada la traducción, reemplazar los marcadores numéricos con los tags HTML originales guardados en el mapa:
    - `<1>` → `<span class="bold">`
    - `</1>` → `</span>`
    - `<2/>` → `<br>`
@@ -342,7 +342,7 @@ CREATE TABLE change_detections (
 
    Detalle del archivo `translations.js` y su funcionamiento: ver sección "PATCH DE RUNTIME PARA TRADUCCIONES" más adelante.
 
-5. **Manejo de meta tags y atributos de idioma**: Para cada página traducida:
+6. **Manejo de meta tags y atributos de idioma**: Para cada página traducida:
    - Actualizar `<html lang="XX">` al idioma destino.
    - Traducir `<title>`, `<meta name="description">`, `<meta property="og:title">`, `<meta property="og:description">`, `<meta property="og:site_name">` y `<meta name="twitter:title">`, `<meta name="twitter:description">`.
    - Inyectar etiquetas `<link rel="alternate" hreflang="...">` en el `<head>` para todos los idiomas disponibles (incluyendo el original), usando las URLs de `targetUrls` del config:
@@ -354,7 +354,7 @@ CREATE TABLE change_detections (
      <link rel="alternate" hreflang="x-default" href="https://ejemplo.com/about" />
      ```
 
-6. **Datos estructurados JSON-LD**: Los bloques `<script type="application/ld+json">` son valiosos para SEO. Sus textos visibles (name, description, etc.) deben traducirse procesándolos como JSON para no romper su estructura:
+7. **Datos estructurados JSON-LD**: Los bloques `<script type="application/ld+json">` son valiosos para SEO. Sus textos visibles (name, description, etc.) deben traducirse procesándolos como JSON para no romper su estructura:
 
    ```typescript
    $('script[type="application/ld+json"]').each((_, el) => {
@@ -369,9 +369,9 @@ CREATE TABLE change_detections (
    });
    ```
 
-7. **Carpetas Independientes**: Guardar cada página traducida en su directorio de idioma configurado, y copiar los assets a ese directorio (o crear symlinks según `copyAssetsMode` del config). Cada directorio de idioma será totalmente independiente y se publicará sin depender del directorio `original/`. Generar también el archivo `_redirects` en cada directorio de traducción a partir de `redirects.json` (mismas reglas que el original, los paths no cambian ya que son relativos al root del sitio). Actualizar status en `page_translations` (no en `pages`). La traducción de cada página se confirma atómicamente en la BD para permitir resumir en caso de error.
+8. **Carpetas Independientes**: Guardar cada página traducida en su directorio de idioma configurado, y copiar los assets a ese directorio (o crear symlinks según `copyAssetsMode` del config). Cada directorio de idioma será totalmente independiente y se publicará sin depender del directorio `original/`. Generar también el archivo `_redirects` en cada directorio de traducción a partir de `redirects.json` (mismas reglas que el original, los paths no cambian ya que son relativos al root del sitio). Actualizar status en `page_translations` (no en `pages`). La traducción de cada página se confirma atómicamente en la BD para permitir resumir en caso de error.
 
-8. **Reescritura de enlaces internos absolutos**: Escanear todos los `<a href>` del HTML traducido. Si algún enlace apunta al dominio original con URL absoluta (ej. `https://ejemplo.com/about`), reescribirlo al dominio del idioma de destino configurado en `targetUrls` (ej. `https://es.ejemplo.com/about`). Los enlaces con paths relativos no necesitan reescritura ya que apuntan dentro del mismo directorio de idioma.
+9. **Reescritura de enlaces internos absolutos**: Escanear todos los `<a href>` del HTML traducido. Si algún enlace apunta al dominio original con URL absoluta (ej. `https://ejemplo.com/about`), reescribirlo al dominio del idioma de destino configurado en `targetUrls` (ej. `https://es.ejemplo.com/about`). Los enlaces con paths relativos no necesitan reescritura ya que apuntan dentro del mismo directorio de idioma.
 
 ---
 
@@ -468,8 +468,6 @@ staticl10n
     │   ├── Detectar URLs (crawler)
     │   ├── Capturar páginas pendientes
     │   ├── Re-capturar página específica
-    │   ├── Aplicar pre-personalización (sobre original/)
-    │   ├── Vista previa de pre-personalización (dry-run)
     │   ├── Ver páginas capturadas
     │   ├── Ver redirecciones detectadas
     │   └── Regenerar archivo _redirects
@@ -1071,7 +1069,7 @@ Para una página Next.js capturada y traducida, cada entorno será totalmente in
 │   ├── index.html
 │   └── about/index.html
 │
-├── original/                      ← HTML procesado por el adapter + pre-personalizado
+├── original/                      ← HTML procesado por el adapter (inmutable tras la captura)
 │   ├── _redirects                 ← redirecciones para Cloudflare Pages / Netlify
 │   ├── index.html
 │   ├── about/index.html

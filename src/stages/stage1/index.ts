@@ -1,6 +1,6 @@
 export { crawlSite, crawlSiteDiscover, type CrawlDiscoverResult } from './crawler.js';
 export { capturePages, resolveOutputPath } from './exporter.js';
-export { applyPrePersonalization, applyRule } from './personalizer.js';
+export { applyPreTranslationInMemory, applyRule } from './personalizer.js';
 export { downloadAssets } from './downloader.js';
 export {
   loadRedirectsFile,

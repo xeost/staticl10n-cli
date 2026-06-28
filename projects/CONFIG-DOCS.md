@@ -81,7 +81,9 @@ translation:
   translateCodeBlockComments: true
 
 personalization:
-  # Rules applied at the end of Stage 1, BEFORE translation
+  # Rules applied in-memory at the START of Stage 2, before fragment extraction.
+  # original/ is NEVER modified — it remains immutable after capture.
+  # This means you can change these rules and re-run Stage 2 without re-capturing.
   # Use to remove analytics, tracking scripts, cookie banners, ads, etc.
   preTranslation:
     - type: remove_element

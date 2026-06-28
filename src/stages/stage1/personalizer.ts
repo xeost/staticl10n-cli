@@ -1,84 +1,25 @@
 import * as cheerio from 'cheerio';
-import fs from 'fs-extra';
-import path from 'path';
 import type { PersonalizationRule, ProjectConfig } from '../../core/config.js';
-import {
-  dbGetPagesByProject,
-  dbGetProjectBySlug,
-  dbUpdatePageStatus,
-} from '../../core/db.js';
 import { logger } from '../../utils/logger.js';
 
 // ─── Pre-Personalizer ─────────────────────────────────────────────────────────
 
-export interface PersonalizationResult {
-  pagesProcessed: number;
-  affectedByRule: Record<string, number>;
-}
-
 /**
- * Applies pre-translation personalization rules from config.personalization.preTranslation
- * to all captured HTML files in the original/ directory.
- * These rules run AFTER capture but BEFORE translation.
+ * Applies pre-translation personalization rules in-memory.
+ * The original/ directory is NOT modified — it stays immutable.
+ * Call this before extracting translation fragments in Stage 2.
  */
-export async function applyPrePersonalization(
-  projectSlug: string,
-  config: ProjectConfig,
-  dryRun = false,
-  targetUrl?: string,
-): Promise<PersonalizationResult> {
-  const project = dbGetProjectBySlug(projectSlug);
-  if (!project) throw new Error(`Project "${projectSlug}" not found`);
-
+export function applyPreTranslationInMemory(
+  html: string,
+  config: Pick<ProjectConfig, 'personalization'>,
+): string {
   const rules = config.personalization.preTranslation;
-  if (rules.length === 0) {
-    logger.info('No pre-translation personalization rules configured.');
-    return { pagesProcessed: 0, affectedByRule: {} };
-  }
-
-  let pages = dbGetPagesByProject(project.id, ['captured', 'personalized']);
-  if (targetUrl) pages = pages.filter((p) => p.url === targetUrl);
-  const affectedByRule: Record<string, number> = {};
-
+  if (rules.length === 0) return html;
+  const $ = cheerio.load(html);
   for (const rule of rules) {
-    affectedByRule[rule.description ?? rule.type] = 0;
+    applyRule($, rule);
   }
-
-  let pagesProcessed = 0;
-
-  for (const pageRow of pages) {
-    const htmlPath = path.join(config.paths.original, pageRow.path);
-    if (!fs.existsSync(htmlPath)) {
-      logger.warn(`HTML file not found, skipping: ${htmlPath}`);
-      continue;
-    }
-
-    const originalHtml = fs.readFileSync(htmlPath, 'utf-8');
-    let $ = cheerio.load(originalHtml);
-    let modified = false;
-
-    for (const rule of rules) {
-      const key = rule.description ?? rule.type;
-      const count = applyRule($, rule);
-      if (count > 0) {
-        affectedByRule[key] = (affectedByRule[key] ?? 0) + count;
-        modified = true;
-      }
-    }
-
-    if (modified && !dryRun) {
-      fs.writeFileSync(htmlPath, $.html(), 'utf-8');
-      dbUpdatePageStatus(pageRow.id, 'personalized');
-    }
-
-    pagesProcessed++;
-  }
-
-  if (dryRun) {
-    logger.info('[DRY RUN] No files were modified.');
-  }
-
-  return { pagesProcessed, affectedByRule };
+  return $.html();
 }
 
 // ─── Rule Engine ──────────────────────────────────────────────────────────────

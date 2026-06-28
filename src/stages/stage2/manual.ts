@@ -10,6 +10,7 @@ import { dbGetProjectBySlug, dbGetCachedTranslation } from '../../core/db.js';
 import { hashFragment, storeCachedTranslation } from './cache.js';
 import { verifyPlaceholderIntegrity } from './translator.js';
 import { extractFragments } from './extractor.js';
+import { applyPreTranslationInMemory } from '../stage1/personalizer.js';
 import { translateProject } from './index.js';
 import { extractMetaFragments } from './meta.js';
 import { logger } from '../../utils/logger.js';
@@ -98,7 +99,8 @@ async function runStage1Generate(
         const originalHtmlPath = path.join(config.paths.original, page.path);
         if (!fs.existsSync(originalHtmlPath)) continue;
 
-        const originalHtml = fs.readFileSync(originalHtmlPath, 'utf-8');
+        const rawHtml = fs.readFileSync(originalHtmlPath, 'utf-8');
+        const originalHtml = applyPreTranslationInMemory(rawHtml, config);
         const { fragments } = extractFragments(originalHtml, config.translation.maxFragmentTokens);
         const metaFragments = extractMetaFragments(originalHtml);
         const allFragments = [...fragments, ...metaFragments];
@@ -278,7 +280,8 @@ async function runStage2Import(
         const originalHtmlPath = path.join(config.paths.original, page.path);
         if (!fs.existsSync(originalHtmlPath)) continue;
 
-        const originalHtml = fs.readFileSync(originalHtmlPath, 'utf-8');
+        const rawHtml = fs.readFileSync(originalHtmlPath, 'utf-8');
+        const originalHtml = applyPreTranslationInMemory(rawHtml, config);
         const { fragments } = extractFragments(originalHtml, config.translation.maxFragmentTokens);
         const metaFragments = extractMetaFragments(originalHtml);
         const allFragments = [...fragments, ...metaFragments];

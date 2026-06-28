@@ -22,7 +22,7 @@ import { rewriteLinks } from './linkRewriter.js';
 import { processMeta } from './meta.js';
 import { generateSitemap } from './sitemap.js';
 import { translateCodeComments, translateFragments, translateJsonLdValues } from './translator.js';
-import { applyRule } from '../stage1/personalizer.js';
+import { applyPreTranslationInMemory, applyRule } from '../stage1/personalizer.js';
 import { writeRedirectsTo } from '../stage1/redirects.js';
 
 // ─── Stage 2 Orchestrator ─────────────────────────────────────────────────────
@@ -84,7 +84,9 @@ export async function translateProject(
       continue;
     }
 
-    const originalHtml = fs.readFileSync(originalHtmlPath, 'utf-8');
+    const rawHtml = fs.readFileSync(originalHtmlPath, 'utf-8');
+    // Apply preTranslation rules in-memory — original/ is never modified
+    const originalHtml = applyPreTranslationInMemory(rawHtml, config);
 
     for (const lang of languages) {
       try {
