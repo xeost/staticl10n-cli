@@ -119,6 +119,8 @@ personalization:
   preTranslation:
     - type: remove_element
       selector: "script[src='https://cdn.usefathom.com/script.js']"
+    - type: remove_element
+      selector: "starlight-lang-select"
   # Rules applied AFTER translation (applied automatically during translation/build for both AI and manual modes)
   # Use to inject banners, replace copyright text, rename page titles, etc.
   # Add "languages: [es, fr]" to a rule to restrict it to specific language outputs.

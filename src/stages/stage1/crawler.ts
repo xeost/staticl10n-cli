@@ -97,6 +97,11 @@ export async function crawlSite(
       const rawUrl = queue.shift()!
       const url = normalizeUrl(rawUrl, config.crawl);
 
+      if (!isInternalUrl(url, config.url)) {
+        logger.debug(`Skipping external URL: ${url}`);
+        continue;
+      }
+
       if (visited.has(url)) continue;
       visited.add(url);
 
@@ -153,7 +158,7 @@ export async function crawlSite(
               });
               logger.info(`Detected meta-refresh redirect: ${fromPath} → ${toPath}`);
 
-              if (!visited.has(normalizedRedirect)) {
+              if (isInternalUrl(normalizedRedirect, config.url) && !visited.has(normalizedRedirect)) {
                 queue.push(normalizedRedirect);
               }
             }
@@ -165,6 +170,7 @@ export async function crawlSite(
 
         const finalUrl = page.url();
         const normalizedFinal = normalizeUrl(finalUrl, config.crawl);
+        const isFinalInternal = isInternalUrl(normalizedFinal, config.url);
 
         // Register redirect if the final URL differs from the requested one
         if (firstRedirectStatus > 0) {
@@ -182,6 +188,11 @@ export async function crawlSite(
           } catch {
             // Ignore malformed URLs
           }
+        }
+
+        if (!isFinalInternal) {
+          logger.warn(`Redirected to external URL: ${normalizedFinal} - skipping capture`);
+          continue;
         }
 
         const pagePath = urlToFilePath(normalizedFinal);
@@ -381,6 +392,11 @@ export async function crawlSiteDiscover(
       const rawUrl = queue.shift()!;
       const url = normalizeUrl(rawUrl, config.crawl);
 
+      if (!isInternalUrl(url, config.url)) {
+        logger.debug(`Skipping external URL: ${url}`);
+        continue;
+      }
+
       if (visited.has(url)) continue;
       visited.add(url);
 
@@ -435,7 +451,7 @@ export async function crawlSiteDiscover(
               });
               logger.info(`Detected meta-refresh redirect: ${fromPath} → ${toPath}`);
 
-              if (!visited.has(normalizedRedirect)) {
+              if (isInternalUrl(normalizedRedirect, config.url) && !visited.has(normalizedRedirect)) {
                 queue.push(normalizedRedirect);
               }
             }
@@ -447,6 +463,7 @@ export async function crawlSiteDiscover(
 
         const finalUrl = page.url();
         const normalizedFinal = normalizeUrl(finalUrl, config.crawl);
+        const isFinalInternal = isInternalUrl(normalizedFinal, config.url);
 
         // Register redirect if the final URL differs from the requested one
         if (firstRedirectStatus > 0) {
@@ -466,32 +483,42 @@ export async function crawlSiteDiscover(
           }
         }
 
+        if (!isFinalInternal) {
+          logger.warn(`Redirected to external URL: ${normalizedFinal} - skipping discovery`);
+          continue;
+        }
+
         const pagePath = urlToFilePath(normalizedFinal);
         const status = httpStatus >= 400 ? 'error' : 'pending';
         const finalPathname = new URL(normalizedFinal).pathname;
 
-        pagesMetadata.set(finalPathname, {
-          url: normalizedFinal,
-          filePath: pagePath,
-          status,
-          httpStatus,
-        });
-
-        discovered++;
-        onProgress?.(normalizedFinal, discovered);
-
-        if (httpStatus < 400) {
-          // Extract links from the page
-          const html = await page.content();
-          const links = extractLinks(html, normalizedFinal, config);
-          for (const link of links) {
-            if (!visited.has(link)) {
-              queue.push(link);
-            }
-          }
-        } else {
-          logger.warn(`HTTP ${httpStatus} for URL: ${normalizedFinal}`);
+        if (httpStatus === 404) {
+          logger.warn(`HTTP 404 (Not Found) for URL: ${normalizedFinal} - skipping`);
           errors++;
+        } else {
+          pagesMetadata.set(finalPathname, {
+            url: normalizedFinal,
+            filePath: pagePath,
+            status,
+            httpStatus,
+          });
+
+          discovered++;
+          onProgress?.(normalizedFinal, discovered);
+
+          if (httpStatus < 400) {
+            // Extract links from the page
+            const html = await page.content();
+            const links = extractLinks(html, normalizedFinal, config);
+            for (const link of links) {
+              if (!visited.has(link)) {
+                queue.push(link);
+              }
+            }
+          } else {
+            logger.warn(`HTTP ${httpStatus} for URL: ${normalizedFinal}`);
+            errors++;
+          }
         }
       } catch (err) {
         logger.warn(`Failed to crawl ${url}: ${(err as Error).message}`);

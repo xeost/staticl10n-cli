@@ -1,0 +1,37 @@
+{
+  "detectedAt": "2026-06-27T17:47:09.369Z",
+  "totalRedirects": 5,
+  "redirects": [
+    {
+      "from": "/company",
+      "to": "/",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "from": "/play",
+      "to": "/",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "from": "/solstice",
+      "to": "/blog/solstice-festival",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "from": "/themes/details/astro-air",
+      "to": "/404",
+      "statusCode": 302,
+      "detectedDuring": "crawl"
+    },
+    {
+      "from": "/themes/details/engineering-blog",
+      "to": "/404",
+      "statusCode": 302,
+      "detectedDuring": "crawl"
+    }
+  ],
+  "manual": []
+}
