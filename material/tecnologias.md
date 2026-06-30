@@ -97,6 +97,7 @@
   - Categoría: Bases de Datos y Almacenamiento
   - Ya tiene traducción: no
   - Traducido: PENDIENTE
+  - Nota: 4265 paths detectados y la mayoría son relevantes. Lo dejos para más adelante
 
 - PyTorch
   - Framework de deep learning desarrollado por Meta, líder actual en investigación de IA por su flexibilidad y tipado dinámico.
@@ -105,6 +106,9 @@
   - Categoría: Ciencia de Datos e IA
   - Ya tiene traducción: no
   - Traducido: PENDIENTE
+  - Notas:
+    - Se divide en pytorch y pytorch-docs
+    - pytorch (654 paths relevantes detectados), pytorch-docs (7612 paths relevantes detectados). Lo dejo para más adelante
 
 - Express.js
   - Framework web rápido, minimalista y flexible para construir APIs en Node.js.
