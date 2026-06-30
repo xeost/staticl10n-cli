@@ -65,9 +65,37 @@ translation:
   # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
   cacheExpiry: -1
   # Optional context injected into the translation prompt (describe the site for better accuracy)
-  context: ""
+  context: "Official documentation for FastAPI, a modern, fast (high-performance), web framework for building APIs with Python 3.8+ based on standard Python type hints."
   # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
-  preserveTerms: []
+  preserveTerms:
+    - FastAPI
+    - Python
+    - Pydantic
+    - Starlette
+    - Uvicorn
+    - OpenAPI
+    - Swagger UI
+    - ReDoc
+    - JSON Schema
+    - OAuth2
+    - JWT
+    - CORS
+    - SQLModel
+    - SQLAlchemy
+    - Docker
+    - Type hints
+    - Dependency Injection
+    - WebSockets
+    - GraphQL
+    - API
+    - CLI
+    - JSON
+    - YAML
+    - Pip
+    - Poetry
+    - Conda
+    - Git
+    - GitHub
   # Set to true to translate comment spans inside <pre><code> blocks (default: true)
   translateCodeBlockComments: true
 

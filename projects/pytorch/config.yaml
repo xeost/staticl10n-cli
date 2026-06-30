@@ -23,7 +23,8 @@ crawl:
   maxPages: 5000
   # Blocklist mode: skip URLs whose pathname contains any of these strings (patterns starting with ^ or ending with $ are evaluated as regex)
   # Use this to exclude sections like /blog/, /api/, /admin/, other language prefixes, etc.
-  ignorePatterns: []
+  # Notes: 4196 paths for "^/event-calendar/" in the full crawl
+  ignorePatterns: ["^/event-calendar$", "^/event-calendar/", "^/event$", "^/event/", "^/events$", "^/events/", "^/venue$", "^/venue/"]
   # Strip trailing slashes from crawled URLs for consistent deduplication
   normalizeTrailingSlash: true
   # Remove query parameters from crawled URLs (keeps ?lang=, ?v=... out of the page list)
@@ -33,14 +34,14 @@ crawl:
 
 paths:
   # Where processed + pre-personalized HTML files are saved (Stage 1 output)
-  original: /Users/fabian/Documents/CodeProjects/github.com/esdocu/pytorch/original
+  original: /Users/fabian/Documents/CodeProjects/github.com/esdocu/pytorch/pytorch/original
   # Where raw Playwright HTML is saved (used for reprocessing without re-crawling)
-  raw: /Users/fabian/Documents/CodeProjects/github.com/esdocu/pytorch/raw
+  raw: /Users/fabian/Documents/CodeProjects/github.com/esdocu/pytorch/pytorch/raw
   # Where temporary metadata and cache files are saved
-  tmp: /Users/fabian/Documents/CodeProjects/github.com/esdocu/pytorch/tmp
+  tmp: /Users/fabian/Documents/CodeProjects/github.com/esdocu/pytorch/pytorch/tmp
   # Output directories per target language
   translations:
-      es: /Users/fabian/Documents/CodeProjects/github.com/esdocu/pytorch/es
+      es: /Users/fabian/Documents/CodeProjects/github.com/esdocu/pytorch/pytorch/es
 
 translation:
   # Translation provider: "ollama" (local, no API key) or "gemini" (Google Gemini API)
@@ -65,9 +66,37 @@ translation:
   # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
   cacheExpiry: -1
   # Optional context injected into the translation prompt (describe the site for better accuracy)
-  context: ""
+  context: "Official website for PyTorch, an open source machine learning framework that accelerates the path from research prototyping to production deployment."
   # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
-  preserveTerms: []
+  preserveTerms:
+    - PyTorch
+    - Python
+    - C++
+    - CUDA
+    - ROCm
+    - Tensor
+    - Tensors
+    - Autograd
+    - TorchScript
+    - NumPy
+    - Conda
+    - Pip
+    - Docker
+    - CPU
+    - GPU
+    - TPU
+    - ONNX
+    - LibTorch
+    - TorchDynamo
+    - TorchInductor
+    - AOTAutograd
+    - PrimTorch
+    - TorchRec
+    - TorchVision
+    - TorchAudio
+    - TorchText
+    - GitHub
+    - API
   # Set to true to translate comment spans inside <pre><code> blocks (default: true)
   translateCodeBlockComments: true
 

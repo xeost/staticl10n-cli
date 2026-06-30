@@ -27,19 +27,27 @@ export class NextjsAdapter implements SiteAdapter {
 
   async beforeCapture(page: Page, config: ProjectConfig): Promise<void> {
     // Wait for network to settle
-    await page.waitForLoadState('networkidle');
+    try {
+      await page.waitForLoadState('networkidle', { timeout: 15000 });
+    } catch {
+      // Ignore networkidle timeouts — some sites have persistent websockets or analytics loops
+    }
 
     // Wait for React hydration to complete
-    await page.waitForFunction(() => {
-      // Pages Router: __NEXT_DATA__ is present and document is ready
-      const nextData = document.getElementById('__NEXT_DATA__');
-      if (nextData && document.readyState === 'complete') return true;
-      // App Router: #__next root exists and document is ready
-      const root = document.getElementById('__next');
-      if (root && document.readyState === 'complete') return true;
-      // Generic fallback
-      return document.readyState === 'complete';
-    });
+    try {
+      await page.waitForFunction(() => {
+        // Pages Router: __NEXT_DATA__ is present and document is ready
+        const nextData = document.getElementById('__NEXT_DATA__');
+        if (nextData && document.readyState === 'complete') return true;
+        // App Router: #__next root exists and document is ready
+        const root = document.getElementById('__next');
+        if (root && document.readyState === 'complete') return true;
+        // Generic fallback
+        return document.readyState === 'complete';
+      }, { timeout: 10000 });
+    } catch {
+      // Ignore hydration wait errors
+    }
 
     // Additional configurable delay for post-hydration JS execution
     const postHydrationDelay = config.crawl.postHydrationDelayMs ?? 800;

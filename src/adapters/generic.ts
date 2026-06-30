@@ -15,8 +15,12 @@ export class GenericAdapter implements SiteAdapter {
   }
 
   async beforeCapture(page: Page, _config: ProjectConfig): Promise<void> {
-    // Wait until the network is idle and the document is complete
-    await page.waitForLoadState('networkidle');
+    try {
+      // Wait until the network is idle (with a 15s timeout to prevent hanging on analytics/websockets)
+      await page.waitForLoadState('networkidle', { timeout: 15000 });
+    } catch {
+      // Ignore networkidle timeouts — some sites have persistent websockets or analytics loops
+    }
   }
 
   async processHTML(html: string, _pageUrl: string, _config: ProjectConfig): Promise<string> {

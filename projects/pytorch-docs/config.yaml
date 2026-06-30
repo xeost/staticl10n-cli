@@ -1,8 +1,8 @@
 # Display name of the project (shown in the interactive UI)
-name: PyTorck Docs
+name: PyTorch Docs
 
 # Unique identifier — also used as the folder name under projects/
-slug: pytorck-docs
+slug: pytorch-docs
 
 # URL of the source site to crawl and translate
 url: "https://docs.pytorch.org"
@@ -65,9 +65,37 @@ translation:
   # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
   cacheExpiry: -1
   # Optional context injected into the translation prompt (describe the site for better accuracy)
-  context: ""
+  context: "Official documentation for PyTorch, covering APIs, tutorials, guides, and developer notes for training and deploying deep learning models."
   # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
-  preserveTerms: []
+  preserveTerms:
+    - PyTorch
+    - Python
+    - C++
+    - CUDA
+    - ROCm
+    - Tensor
+    - Tensors
+    - Autograd
+    - TorchScript
+    - NumPy
+    - Conda
+    - Pip
+    - Docker
+    - CPU
+    - GPU
+    - TPU
+    - ONNX
+    - LibTorch
+    - TorchDynamo
+    - TorchInductor
+    - AOTAutograd
+    - PrimTorch
+    - TorchRec
+    - TorchVision
+    - TorchAudio
+    - TorchText
+    - GitHub
+    - API
   # Set to true to translate comment spans inside <pre><code> blocks (default: true)
   translateCodeBlockComments: true
 
