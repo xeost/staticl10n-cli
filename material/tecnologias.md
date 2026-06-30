@@ -88,7 +88,7 @@
   - MkDocs (Material)
   - Categoría: Frameworks y APIs (Backend)
   - Ya tiene traducción: la sección learn sí pero la referencia no
-  - Traducido: PENDIENTE
+  - Traducido: EN PROCESO
 
 - Redis
   - Almacén de estructura de datos en memoria, usado habitualmente como base de datos ultrarrápida o caché.
@@ -144,7 +144,7 @@
   - Astro (Starlight)
   - Categoría: Frameworks y APIs (Backend)
   - Ya tiene traducción: sí pero incompleta
-  - Traducido: EN PROCESO
+  - Traducido: SI
 
 - Laravel
   - Framework PHP elegante y con una comunidad gigante.
