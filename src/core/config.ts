@@ -102,17 +102,33 @@ export interface ProjectConfig {
   /**
    * Maps external (sibling-project) domains to their translated equivalents,
    * per target language. Each key is an external origin; each value is a
-   * Record mapping language codes to the translated domain for that language.
+   * Record mapping language codes to either the translated domain string OR
+   * an object containing the translated URL and domain-specific path rewrite rules.
    *
    * Example — two related Astro translation projects:
-   *   \"domainMap\": {
-   *     \"https://docs.astro.build\": {
-   *       \"es\": \"https://astro-docs.esdocu.com\",
-   *       \"fr\": \"https://astro-docs.frdocu.com\"
+   *   "domainMap": {
+   *     "https://docs.astro.build": {
+   *       "es": {
+   *         "url": "https://astro-docs.esdocu.com",
+   *         "pathRewrite": [
+   *           { "pattern": "^/en/", "replacement": "/" }
+   *         ]
+   *       },
+   *       "fr": "https://astro-docs.frdocu.com"
    *     }
    *   }
    */
-  domainMap?: Record<string, Record<string, string>>;
+  domainMap?: Record<
+    string,
+    Record<
+      string,
+      | string
+      | {
+        url: string;
+        pathRewrite?: PathRewriteRule[];
+      }
+    >
+  >;
 }
 
 const PROJECTS_DIR = path.join(process.cwd(), 'projects');
@@ -192,14 +208,39 @@ function yamlPersonalizationRules(rules: PersonalizationRule[], indent: string):
 }
 
 /** Serializes domainMap as an indented YAML block. */
-function yamlDomainMap(domainMap: Record<string, Record<string, string>>, indent: string): string {
+function yamlDomainMap(
+  domainMap: Record<
+    string,
+    Record<
+      string,
+      | string
+      | {
+        url: string;
+        pathRewrite?: PathRewriteRule[];
+      }
+    >
+  >,
+  indent: string,
+): string {
   const entries = Object.entries(domainMap);
   if (entries.length === 0) return '{}';
   const lines: string[] = [''];
   for (const [domain, langs] of entries) {
     lines.push(`${indent}${yamlStr(domain)}:`);
-    for (const [lang, url] of Object.entries(langs)) {
-      lines.push(`${indent}  ${lang}: ${yamlStr(url)}`);
+    for (const [lang, target] of Object.entries(langs)) {
+      if (typeof target === 'string') {
+        lines.push(`${indent}  ${lang}: ${yamlStr(target)}`);
+      } else {
+        lines.push(`${indent}  ${lang}:`);
+        lines.push(`${indent}    url: ${yamlStr(target.url)}`);
+        if (target.pathRewrite && target.pathRewrite.length > 0) {
+          lines.push(`${indent}    pathRewrite:`);
+          for (const rule of target.pathRewrite) {
+            lines.push(`${indent}      - pattern: ${yamlStr(rule.pattern)}`);
+            lines.push(`${indent}        replacement: ${yamlStr(rule.replacement)}`);
+          }
+        }
+      }
     }
   }
   return lines.join('\n');
@@ -240,7 +281,7 @@ function buildAnnotatedYaml(config: ProjectConfig): string {
     : '[]';
 
   const allowPatternsLine = config.crawl.allowPatterns !== undefined
-    ? `  # Allowlist mode: crawl ONLY paths whose pathname contains at least one of these strings.
+    ? `  # Allowlist mode: crawl ONLY paths whose pathname contains at least one of these strings (patterns starting with ^ or ending with $ are evaluated as regex).
   # Mutually exclusive with ignorePatterns — use one or the other, not both.
   allowPatterns: ${yamlInlineList(config.crawl.allowPatterns)}
 `
@@ -278,7 +319,7 @@ crawl:
   delayJitterMs: ${config.crawl.delayJitterMs}
   # Maximum number of pages to crawl (set to a high value to crawl everything)
   maxPages: ${config.crawl.maxPages}
-  # Blocklist mode: skip URLs whose pathname contains any of these strings
+  # Blocklist mode: skip URLs whose pathname contains any of these strings (patterns starting with ^ or ending with $ are evaluated as regex)
   # Use this to exclude sections like /blog/, /api/, /admin/, other language prefixes, etc.
   ignorePatterns: ${ignorePatterns}
 ${allowPatternsLine}  # Strip trailing slashes from crawled URLs for consistent deduplication
@@ -382,7 +423,7 @@ export function buildDefaultConfig(opts: {
     crawl: {
       delayMs: 1500,
       delayJitterMs: 500,
-      maxPages: 500,
+      maxPages: 5000,
       ignorePatterns: [],
       normalizeTrailingSlash: true,
       stripQueryParams: true,

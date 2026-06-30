@@ -20,8 +20,8 @@ crawl:
   # Additional random delay per request (helps avoid bot detection)
   delayJitterMs: 500
   # Maximum number of pages to crawl (set to a high value to crawl everything)
-  maxPages: 500
-  # Blocklist mode: skip URLs whose pathname contains any of these strings
+  maxPages: 5000
+  # Blocklist mode: skip URLs whose pathname contains any of these strings (patterns starting with ^ or ending with $ are evaluated as regex)
   # Use this to exclude sections like /blog/, /api/, /admin/, other language prefixes, etc.
   ignorePatterns: ["/blog", "/plus"]
   # Strip trailing slashes from crawled URLs for consistent deduplication

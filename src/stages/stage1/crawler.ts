@@ -315,11 +315,22 @@ function isUrlAllowed(
 ): boolean {
   const { pathname } = new URL(url);
 
+  const matchesPattern = (pattern: string): boolean => {
+    if (pattern.startsWith('^') || pattern.endsWith('$')) {
+      try {
+        return new RegExp(pattern).test(pathname);
+      } catch {
+        // Fallback to substring match if regex compilation fails
+      }
+    }
+    return pathname.includes(pattern);
+  };
+
   if (crawl.allowPatterns?.length) {
-    return crawl.allowPatterns.some((pattern) => pathname.includes(pattern));
+    return crawl.allowPatterns.some(matchesPattern);
   }
 
-  return !crawl.ignorePatterns.some((pattern) => pathname.includes(pattern));
+  return !crawl.ignorePatterns.some(matchesPattern);
 }
 
 export interface CrawlDiscoverResult {

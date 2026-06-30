@@ -169,7 +169,7 @@ CREATE TABLE change_detections (
   "crawl": {
     "delayMs": 1500,
     "delayJitterMs": 500,
-    "maxPages": 500,
+    "maxPages": 5000,
     "ignorePatterns": ["/api/", "/admin/", "/_next/"],
     "normalizeTrailingSlash": true,
     "stripQueryParams": true

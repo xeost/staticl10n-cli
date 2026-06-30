@@ -28,7 +28,7 @@ crawl:
   # Additional random delay per request (helps avoid bot detection)
   delayJitterMs: 500
   # Maximum number of pages to crawl (set to a high value to crawl everything)
-  maxPages: 500
+  maxPages: 5000
   # Blocklist mode: skip URLs whose pathname contains any of these strings
   ignorePatterns: ["/api/", "/admin/"]
   # Allowlist mode: ONLY crawl paths that contain at least one of these strings
@@ -215,24 +215,26 @@ The `.env` file is loaded automatically at startup using Node.js's built-in env-
 
 The `crawl` object supports two mutually exclusive URL filter modes. Use **one or the other** — if both are set, `allowPatterns` takes precedence and a warning is logged.
 
+Patterns starting with `^` or ending with `$` are compiled and evaluated as **regular expressions** (tested against the URL pathname). Other patterns are matched as simple substrings/substring prefixes using `.includes()`.
+
 ### `ignorePatterns` — blocklist (default)
 
-Crawl all discovered URLs **except** those whose pathname contains at least one of the listed strings.
+Crawl all discovered URLs **except** those whose pathname matches at least one of the listed patterns.
 
 ```yaml
 crawl:
-  ignorePatterns: ["/blog/", "/api/", "/fr/", "/de/"]
+  ignorePatterns: ["/blog/", "/api/", "^/fr$", "^/fr/"]
 ```
 
-All paths are visited unless they match a blocked prefix/substring.
+All paths are visited unless they match a blocked prefix/substring/regex.
 
 ### `allowPatterns` — allowlist
 
-Crawl **only** URLs whose pathname contains at least one of the listed strings. Everything else is silently skipped.
+Crawl **only** URLs whose pathname matches at least one of the listed patterns. Everything else is silently skipped.
 
 ```yaml
 crawl:
-  allowPatterns: ["/en/"]
+  allowPatterns: ["^/en/"]
 ```
 
 Useful when the source site serves multiple language versions under different path prefixes (e.g. `/en/`, `/fr/`, `/de/`) and you only want to translate one of them. Combined with `pathRewrite`, you can strip the language prefix from the translated output:
@@ -297,7 +299,11 @@ Each site is a separate staticl10n project. To make cross-site links point to th
 ```yaml
 domainMap:
   "https://docs.astro.build":
-    es: https://astro-docs.esdocu.com
+    es:
+      url: https://astro-docs.esdocu.com
+      pathRewrite:
+        - pattern: "^/en/"
+          replacement: "/"
     fr: https://astro-docs.frdocu.com
 ```
 
@@ -310,9 +316,9 @@ domainMap:
     fr: https://astro.frdocu.com
 ```
 
-With this configuration, a link like `<a href="https://docs.astro.build/en/getting-started/">` in the Spanish translation of the main site will become `<a href="https://astro-docs.esdocu.com/en/getting-started/">`, while the French translation will point to `https://astro-docs.frdocu.com/en/getting-started/`.
+With this configuration, a link like `<a href="https://docs.astro.build/en/getting-started/">` in the Spanish translation of the main site will be correctly rewritten to `<a href="https://astro-docs.esdocu.com/getting-started/">` (applying the custom path rewrite to strip the `/en/` prefix), while the French translation will point to `https://astro-docs.frdocu.com/en/getting-started/`.
 
-> **Note:** `domainMap` only rewrites cross-project links. Internal links (same origin as `config.url`) are handled by the existing translated/untranslated link rewriting logic. If the target project also uses `pathRewrite`, the path in the mapped link is **not** rewritten — each project's `pathRewrite` applies independently to its own output.
+> **Note:** `domainMap` only rewrites cross-project links. Internal links (same origin as `config.url`) are handled by the existing translated/untranslated link rewriting logic. If the target project uses `pathRewrite`, you can define custom `pathRewrite` rules under the specific language code in `domainMap` (by providing an object with `url` and `pathRewrite` instead of a raw URL string) to make sure mapped links are rewritten correctly. If no custom rules are provided in `domainMap`, the path remains unchanged.
 
 ---
 

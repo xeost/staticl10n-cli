@@ -1,0 +1,94 @@
+# Display name of the project (shown in the interactive UI)
+name: FastAPI
+
+# Unique identifier — also used as the folder name under projects/
+slug: fastapi
+
+# URL of the source site to crawl and translate
+url: "https://fastapi.tiangolo.com"
+
+# Deployed URLs for each translated language (used to generate hreflang tags and rewrite links)
+targetUrls:
+  es: fastapi.esdocu.com
+
+# Site type: "generic" (Hugo, Astro, VitePress, Jekyll…) or "nextjs" (Next.js app with React hydration)
+siteType: generic
+
+crawl:
+  # Milliseconds to wait between page requests (reduces server load)
+  delayMs: 1500
+  # Additional random delay per request (helps avoid bot detection)
+  delayJitterMs: 500
+  # Maximum number of pages to crawl (set to a high value to crawl everything)
+  maxPages: 5000
+  # Blocklist mode: skip URLs whose pathname contains any of these strings (patterns starting with ^ or ending with $ are evaluated as regex)
+  # Use this to exclude sections like /blog/, /api/, /admin/, other language prefixes, etc.
+  ignorePatterns: ["^/es$", "^/es/", "^/de$", "^/de/", "^/fr$", "^/fr/", "^/hi$", "^/hi/", "^/ja$", "^/ja/", "^/ko$", "^/ko/", "^/pt$", "^/pt/", "^/ru$", "^/ru/", "^/tr$", "^/tr/", "^/uk$", "^/uk/", "^/zh-hant$", "^/zh-hant/", "^/zh$", "^/zh/"]
+  # Strip trailing slashes from crawled URLs for consistent deduplication
+  normalizeTrailingSlash: true
+  # Remove query parameters from crawled URLs (keeps ?lang=, ?v=... out of the page list)
+  stripQueryParams: true
+  # Extra delay (ms) after page hydration — increase for JS-heavy sites like Next.js
+  postHydrationDelayMs: 800
+
+paths:
+  # Where processed + pre-personalized HTML files are saved (Stage 1 output)
+  original: /Users/fabian/Documents/CodeProjects/github.com/esdocu/fastapi/original
+  # Where raw Playwright HTML is saved (used for reprocessing without re-crawling)
+  raw: /Users/fabian/Documents/CodeProjects/github.com/esdocu/fastapi/raw
+  # Where temporary metadata and cache files are saved
+  tmp: /Users/fabian/Documents/CodeProjects/github.com/esdocu/fastapi/tmp
+  # Output directories per target language
+  translations:
+      es: /Users/fabian/Documents/CodeProjects/github.com/esdocu/fastapi/es
+
+translation:
+  # Translation provider: "ollama" (local, no API key) or "gemini" (Google Gemini API)
+  provider: ollama
+  # Base URL of the local Ollama server (only used when provider is "ollama")
+  ollamaUrl: "http://localhost:11434"
+  # Model name or list of models for multi-model fallback (tried in order on failure)
+  # Comment out any model to temporarily disable it
+  model: 
+    - llama3.1
+    - gemma4
+  # Language code of the source content (ISO 639-1, e.g. "en", "es", "fr")
+  sourceLanguage: en
+  # Target languages to translate into (must match keys in targetUrls and paths.translations)
+  targetLanguages: ["es"]
+  # Number of HTML fragments sent to the model in a single API call
+  batchSize: 20
+  # Maximum token count per HTML fragment before it is split into smaller pieces
+  maxFragmentTokens: 2000
+  # Retries per model before moving to the next one in the list (default: 3)
+  maxRetries: 3
+  # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
+  cacheExpiry: -1
+  # Optional context injected into the translation prompt (describe the site for better accuracy)
+  context: ""
+  # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
+  preserveTerms: []
+  # Set to true to translate comment spans inside <pre><code> blocks (default: true)
+  translateCodeBlockComments: true
+
+personalization:
+  # Rules applied at the end of Stage 1, BEFORE translation
+  # Use to remove analytics, tracking scripts, cookie banners, ads, etc.
+  preTranslation: []
+  # Rules applied AFTER translation (applied automatically during translation/build for both AI and manual modes)
+  # Use to inject banners, replace copyright text, rename page titles, etc.
+  # Add "languages: [es, fr]" to a rule to restrict it to specific language outputs.
+  postTranslation: []
+
+# How to handle static assets (CSS, JS, images, fonts): "copy" (default) or "symlink"
+copyAssetsMode: copy
+
+# Optional: regex rules to rewrite URL pathnames at output time (output files, links, sitemap, hreflang).
+# Useful when crawling a language-prefixed site (e.g. /en/…) but publishing without the prefix.
+# Example: { pattern: "^/en/", replacement: "/" } → /en/getting-started/ becomes /getting-started/
+pathRewrite: []
+
+# Optional: map sibling-project domains to their translated equivalents (per language).
+# Links in translated HTML pointing to a mapped domain are rewritten to the target language URL.
+# Example: links to https://docs.astro.build become https://astro-docs.esdocu.com in Spanish output.
+domainMap: {}

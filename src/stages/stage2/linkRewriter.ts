@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import type { ProjectConfig } from '../../core/config.js';
+import type { ProjectConfig, PathRewriteRule } from '../../core/config.js';
 import { rewritePath } from '../../core/pathRewrite.js';
 
 // ─── Link Rewriter ────────────────────────────────────────────────────────────
@@ -55,16 +55,22 @@ export function rewriteLinks(
   const normalizeSlash = config.crawl.normalizeTrailingSlash;
   let modified = false;
 
-  // Pre-compute domain map entries (origin → origin) for cross-project links.
+  // Pre-compute domain map entries (origin → origin + pathRewrite rules) for cross-project links.
   // Each domainMap entry maps an external origin to a per-language translated origin;
   // we resolve only the entry for the current targetLanguage.
-  const domainMapEntries: [string, string][] = [];
+  const domainMapEntries: { fromOrigin: string; toOrigin: string; pathRewrite?: PathRewriteRule[] }[] = [];
   if (config.domainMap) {
     for (const [from, langMap] of Object.entries(config.domainMap)) {
       const to = langMap[targetLanguage];
       if (!to) continue;
       try {
-        domainMapEntries.push([new URL(normalizeBaseUrl(from)).origin, new URL(normalizeBaseUrl(to)).origin]);
+        const toUrlStr = typeof to === 'string' ? to : to.url;
+        const pathRewrite = typeof to === 'string' ? undefined : to.pathRewrite;
+        domainMapEntries.push({
+          fromOrigin: new URL(normalizeBaseUrl(from)).origin,
+          toOrigin: new URL(normalizeBaseUrl(toUrlStr)).origin,
+          pathRewrite,
+        });
       } catch { /* skip malformed entries */ }
     }
   }
@@ -84,9 +90,10 @@ export function rewriteLinks(
 
     if (!isInternal) {
       // External links — check domain map for cross-project sibling sites
-      for (const [fromOrigin, toOrigin] of domainMapEntries) {
-        if (resolved.origin === fromOrigin) {
-          $(el).attr('href', toOrigin + resolved.pathname + resolved.search + resolved.hash);
+      for (const entry of domainMapEntries) {
+        if (resolved.origin === entry.fromOrigin) {
+          const rewrittenPathname = rewritePath(resolved.pathname, entry.pathRewrite);
+          $(el).attr('href', entry.toOrigin + rewrittenPathname + resolved.search + resolved.hash);
           modified = true;
           break;
         }
