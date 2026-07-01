@@ -13,3 +13,13 @@ model_priorities:
   - gemma4
   - gemma3:12b
   - llama3.1
+
+# Database backup retention policy (number of backups to keep)
+# If a period is set to 0, backups for that period are not retained / cleaned up,
+# or we can keep all. Let's keep 0 as "keep all" or default to reasonable values.
+backup_retention:
+  hourly: 24
+  daily: 7
+  weekly: 4
+  monthly: 12
+

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .env
+data/db/
 data/logs/
 data/tmp/
 *.js.map

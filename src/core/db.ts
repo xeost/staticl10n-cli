@@ -1,8 +1,13 @@
 import Database from 'better-sqlite3';
+import { exec } from 'child_process';
 import fs from 'fs-extra';
 import path from 'path';
+import { promisify } from 'util';
+import { readGlobalConfig } from './globalConfig.js';
 
-const DB_DIR = path.join(process.cwd(), 'data');
+const execAsync = promisify(exec);
+
+const DB_DIR = path.join(process.cwd(), 'data', 'db');
 const DB_PATH = path.join(DB_DIR, 'staticl10n.db');
 
 let db: Database.Database | null = null;
@@ -442,4 +447,164 @@ export function dbMarkChangeStatus(
   getDb()
     .prepare(`UPDATE change_detections SET status = ? WHERE id = ?`)
     .run(status, detectionId);
+}
+
+export interface BackupResult {
+  hourly: { path: string; created: boolean } | null;
+  daily: { path: string; created: boolean } | null;
+  weekly: { path: string; created: boolean } | null;
+  monthly: { path: string; created: boolean } | null;
+}
+
+function getISOWeekString(date: Date): string {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  const weekStr = String(weekNo).padStart(2, '0');
+  return `${d.getUTCFullYear()}-W${weekStr}`;
+}
+
+function cleanRetention(directory: string, limit: number): void {
+  if (limit <= 0) return;
+  if (!fs.existsSync(directory)) return;
+
+  const files = fs.readdirSync(directory)
+    .filter(f => f.startsWith('staticl10n-backup-') && f.endsWith('.zip'))
+    .sort();
+
+  if (files.length > limit) {
+    const toDelete = files.slice(0, files.length - limit);
+    for (const file of toDelete) {
+      const filePath = path.join(directory, file);
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+/**
+ * Backs up the database to the specified directory using the native sqlite3 CLI tool.
+ * Implements a tiered structure (hourly, daily, weekly, monthly) with retention policies.
+ */
+export async function dbBackup(backupDir: string): Promise<BackupResult> {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const weekStr = getISOWeekString(now);
+
+  const hourlyDir = path.join(backupDir, 'hourly');
+  const dailyDir = path.join(backupDir, 'daily');
+  const weeklyDir = path.join(backupDir, 'weekly');
+  const monthlyDir = path.join(backupDir, 'monthly');
+
+  // Ensure target backup directories exist
+  fs.ensureDirSync(hourlyDir);
+  fs.ensureDirSync(dailyDir);
+  fs.ensureDirSync(weeklyDir);
+  fs.ensureDirSync(monthlyDir);
+
+  const hourlyFilename = `staticl10n-backup-${yyyy}-${mm}-${dd}-${hh}.zip`;
+  const hourlyZipPath = path.join(hourlyDir, hourlyFilename);
+
+  const result: BackupResult = {
+    hourly: null,
+    daily: null,
+    weekly: null,
+    monthly: null,
+  };
+
+  // 1. Hourly tier
+  if (!fs.existsSync(hourlyZipPath)) {
+    const tempDbFilename = `staticl10n-backup-${yyyy}-${mm}-${dd}-${hh}.db`;
+    const tempDbPath = path.join(hourlyDir, tempDbFilename);
+
+    const command = `sqlite3 "${DB_PATH}" ".backup '${tempDbPath}'"`;
+    try {
+      await execAsync(command);
+    } catch (error) {
+      throw new Error(
+        `Failed to run native sqlite3 backup. Please ensure the 'sqlite3' CLI tool is installed on your system. Details: ${(error as Error).message}`
+      );
+    }
+
+    const zipCommand = `zip -j "${hourlyZipPath}" "${tempDbPath}"`;
+    try {
+      await execAsync(zipCommand);
+      await fs.unlink(tempDbPath);
+      result.hourly = { path: hourlyZipPath, created: true };
+    } catch (error) {
+      if (fs.existsSync(tempDbPath)) {
+        try {
+          await fs.unlink(tempDbPath);
+        } catch {
+          // ignore
+        }
+      }
+      throw new Error(
+        `Failed to compress backup into a ZIP file. Please ensure the 'zip' CLI tool is installed on your system. Details: ${(error as Error).message}`
+      );
+    }
+  } else {
+    result.hourly = { path: hourlyZipPath, created: false };
+  }
+
+  // 2. Daily tier
+  const dailyFilename = `staticl10n-backup-${yyyy}-${mm}-${dd}.zip`;
+  const dailyZipPath = path.join(dailyDir, dailyFilename);
+  if (!fs.existsSync(dailyZipPath)) {
+    try {
+      fs.copyFileSync(hourlyZipPath, dailyZipPath);
+      result.daily = { path: dailyZipPath, created: true };
+    } catch (error) {
+      throw new Error(`Failed to copy daily backup: ${(error as Error).message}`);
+    }
+  } else {
+    result.daily = { path: dailyZipPath, created: false };
+  }
+
+  // 3. Weekly tier
+  const weeklyFilename = `staticl10n-backup-${weekStr}.zip`;
+  const weeklyZipPath = path.join(weeklyDir, weeklyFilename);
+  if (!fs.existsSync(weeklyZipPath)) {
+    try {
+      fs.copyFileSync(hourlyZipPath, weeklyZipPath);
+      result.weekly = { path: weeklyZipPath, created: true };
+    } catch (error) {
+      throw new Error(`Failed to copy weekly backup: ${(error as Error).message}`);
+    }
+  } else {
+    result.weekly = { path: weeklyZipPath, created: false };
+  }
+
+  // 4. Monthly tier
+  const monthlyFilename = `staticl10n-backup-${yyyy}-${mm}.zip`;
+  const monthlyZipPath = path.join(monthlyDir, monthlyFilename);
+  if (!fs.existsSync(monthlyZipPath)) {
+    try {
+      fs.copyFileSync(hourlyZipPath, monthlyZipPath);
+      result.monthly = { path: monthlyZipPath, created: true };
+    } catch (error) {
+      throw new Error(`Failed to copy monthly backup: ${(error as Error).message}`);
+    }
+  } else {
+    result.monthly = { path: monthlyZipPath, created: false };
+  }
+
+  // 5. Clean retention
+  const globalConfig = readGlobalConfig();
+  const retention = globalConfig.backup_retention;
+
+  cleanRetention(hourlyDir, retention.hourly);
+  cleanRetention(dailyDir, retention.daily);
+  cleanRetention(weeklyDir, retention.weekly);
+  cleanRetention(monthlyDir, retention.monthly);
+
+  return result;
 }

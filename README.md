@@ -48,6 +48,8 @@ The result is one independent static directory per language, ready to be deploye
 | **Playwright browsers** | Chromium | Installed automatically via `pnpm exec playwright install chromium` |
 | **Ollama** | Latest | [https://ollama.com/download](https://ollama.com/download) |
 | **A translation model** | e.g. `gemma4`, `gemma3` | `ollama pull gemma4` |
+| **sqlite3 CLI** | Any | Optional, required for native database backup feature (`brew install sqlite` on macOS, `sudo apt install sqlite3` on Linux) |
+| **zip CLI** | Any | Optional, required for database backup compression feature (`brew install zip` on macOS, `sudo apt install zip` on Linux) |
 
 ### Install Ollama
 
@@ -114,6 +116,7 @@ You will see the main menu:
 ? Main Menu
   ❯ Manage projects
     Select active project  [no project selected]
+    Backup database
     ──────────────────────────────────────────
     Exit
 ```
@@ -445,7 +448,7 @@ The Next.js adapter handles several complexities automatically:
 
 ## Data Storage
 
-All state is stored in `data/staticl10n.db` (SQLite). Tables:
+All state is stored in `data/db/staticl10n.db` (SQLite). Tables:
 
 | Table | Purpose |
 | --- | --- |
@@ -457,6 +460,30 @@ All state is stored in `data/staticl10n.db` (SQLite). Tables:
 | `change_detections` | Change monitoring results |
 
 Logs are written to `data/logs/staticl10n-<timestamp>.log`.
+
+### Database Backups
+
+The CLI tool features a tiered, automated database backup system. If `DB_BACKUP_DIR` is configured in your `.env` file, the tool will store compressed backups under the following directories:
+- `hourly/` — Backs up the database once per hour.
+- `daily/` — Copies the current hour's backup once per day.
+- `weekly/` — Copies the current hour's backup once per week.
+- `monthly/` — Copies the current hour's backup once per month.
+
+#### Retention Policies
+You can configure how many backups to keep for each tier under the `backup_retention` section of `data/global-config.yaml`:
+```yaml
+backup_retention:
+  hourly: 24
+  daily: 7
+  weekly: 4
+  monthly: 12
+```
+
+#### Triggering Backups
+Backups are triggered in three ways:
+1. **Manually**: By selecting the **Backup database** option (Option 3) in the main interactive menu.
+2. **On Graceful Exit**: Automatically when selecting **Exit** from the main menu.
+3. **On Interruption**: Automatically if you exit the CLI using `Ctrl+C` (SIGINT).
 
 ---
 

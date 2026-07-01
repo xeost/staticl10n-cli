@@ -7,8 +7,10 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import inquirer from 'inquirer';
 import readline from 'readline';
+import path from 'path';
 import { readConfig } from '../core/config.js';
 import {
+  dbBackup,
   dbGetPagesByProject,
   dbGetProjectBySlug,
   dbGetTranslationsByPage,
@@ -73,6 +75,13 @@ if (isSubcommand || isFlagOnly) {
     process.exit(1);
   });
 } else {
+  // Handle SIGINT (Ctrl+C) gracefully to ensure automated database backup runs
+  process.on('SIGINT', async () => {
+    console.log(chalk.yellow('\n\nInterrupted! Saving database backup before exit...'));
+    await runAutoBackup();
+    process.exit(130);
+  });
+
   // No args → interactive mode
   runInteractive().catch((err: Error) => {
     logger.error(`Fatal error: ${err.message}`);
@@ -98,6 +107,7 @@ async function runInteractive(): Promise<void> {
     const choices = [
       { name: 'Manage projects', value: 'projects' },
       { name: `Select active project  ${projectLabel}`, value: 'select-project' },
+      { name: 'Backup database', value: 'backup' },
     ];
 
     if (activeProject) {
@@ -124,6 +134,7 @@ async function runInteractive(): Promise<void> {
     }
 
     if (choice === 'exit') {
+      await runAutoBackup();
       console.log(chalk.cyan('\nGoodbye!\n'));
       process.exit(0);
     }
@@ -145,6 +156,10 @@ async function handleMainAction(action: string): Promise<void> {
 
     case 'select-project':
       await selectProjectMenu();
+      break;
+
+    case 'backup':
+      await runBackupMenu();
       break;
 
     case 'status':
@@ -269,4 +284,79 @@ function viewProjectStatus(projectSlug: string): void {
 
   console.log();
 }
+
+// ─── Database Backup Menu ──────────────────────────────────────────────────────
+
+async function runBackupMenu(): Promise<void> {
+  clearScreen();
+  printStageHeader('Backup Database');
+
+  const backupDir = process.env.DB_BACKUP_DIR;
+  if (!backupDir) {
+    logger.warn('Warning: DB_BACKUP_DIR environment variable is not defined in your .env file.');
+    logger.info('Please define DB_BACKUP_DIR (e.g. DB_BACKUP_DIR=data/backups) in your .env file to enable backups.');
+    console.log();
+    await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'continue',
+        message: 'Press Enter to return to Main Menu...',
+      },
+    ]);
+    return;
+  }
+
+  logger.info(`Starting database backup to: ${backupDir}...`);
+  try {
+    const res = await dbBackup(backupDir);
+    logger.success(`Backup process completed!`);
+
+    const logTier = (tierName: string, item: { path: string; created: boolean } | null) => {
+      if (item) {
+        const action = item.created ? chalk.green('Created') : chalk.gray('Up-to-date');
+        const fileBasename = path.basename(item.path);
+        logger.info(`  ${tierName.padEnd(8)}: [${action}] ${fileBasename}`);
+      }
+    };
+    logTier('Hourly', res.hourly);
+    logTier('Daily', res.daily);
+    logTier('Weekly', res.weekly);
+    logTier('Monthly', res.monthly);
+  } catch (error) {
+    logger.error((error as Error).message);
+  }
+
+  console.log();
+  await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'continue',
+      message: 'Press Enter to return to Main Menu...',
+    },
+  ]);
+}
+
+async function runAutoBackup(): Promise<void> {
+  const backupDir = process.env.DB_BACKUP_DIR;
+  if (!backupDir) return;
+
+  process.stdout.write(chalk.cyan('[Backup] Running automated database backup... '));
+  try {
+    const res = await dbBackup(backupDir);
+    const createdTiers: string[] = [];
+    if (res.hourly?.created) createdTiers.push('Hourly');
+    if (res.daily?.created) createdTiers.push('Daily');
+    if (res.weekly?.created) createdTiers.push('Weekly');
+    if (res.monthly?.created) createdTiers.push('Monthly');
+
+    if (createdTiers.length > 0) {
+      console.log(chalk.green(`✓ Tiered backup complete (${createdTiers.join(', ')}).`));
+    } else {
+      console.log(chalk.gray('Up-to-date.'));
+    }
+  } catch (error) {
+    console.log(chalk.red(`✗ Failed: ${(error as Error).message}`));
+  }
+}
+
 

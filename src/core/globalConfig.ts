@@ -3,8 +3,16 @@ import path from 'path';
 import { load as yamlLoad } from 'js-yaml';
 import { logger } from '../utils/logger.js';
 
+export interface BackupRetentionConfig {
+  hourly: number;
+  daily: number;
+  weekly: number;
+  monthly: number;
+}
+
 export interface GlobalConfig {
   model_priorities: string[];
+  backup_retention: BackupRetentionConfig;
 }
 
 const GLOBAL_CONFIG_PATH = path.join(process.cwd(), 'data', 'global-config.yaml');
@@ -23,6 +31,13 @@ model_priorities:
   - gemma4
   - gemma3:12b
   - llama3.1
+
+# Database backup retention policy (number of backups to keep)
+backup_retention:
+  hourly: 24
+  daily: 7
+  weekly: 4
+  monthly: 12
 `;
 
 let cachedGlobalConfig: GlobalConfig | null = null;
@@ -43,11 +58,23 @@ export function readGlobalConfig(): GlobalConfig {
     
     cachedGlobalConfig = {
       model_priorities: parsed?.model_priorities ?? ['gemma4', 'gemma3:12b', 'llama3.1'],
+      backup_retention: {
+        hourly: parsed?.backup_retention?.hourly ?? 24,
+        daily: parsed?.backup_retention?.daily ?? 7,
+        weekly: parsed?.backup_retention?.weekly ?? 4,
+        monthly: parsed?.backup_retention?.monthly ?? 12,
+      },
     };
   } catch (err) {
     logger.warn(`Failed to read global config: ${(err as Error).message}. Using default priorities.`);
     cachedGlobalConfig = {
       model_priorities: ['gemma4', 'gemma3:12b', 'llama3.1'],
+      backup_retention: {
+        hourly: 24,
+        daily: 7,
+        weekly: 4,
+        monthly: 12,
+      },
     };
   }
 

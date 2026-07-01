@@ -181,7 +181,7 @@ export function promptSelect<T = string>(
       if (data[0] === 0x03) {
         cleanup();
         process.stdout.write('\n');
-        process.exit(0);
+        process.kill(process.pid, 'SIGINT');
       }
 
       // Digit shortcut

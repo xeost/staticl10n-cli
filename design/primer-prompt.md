@@ -65,7 +65,8 @@ staticl10n-cli/
 │       ├── delay.ts              # Sleep con jitter para evitar bloqueos
 │       └── logger.ts             # Logger con niveles y colores (usar `chalk`)
 ├── data/                         # Generado en runtime, ignorado en git
-│   └── staticl10n.db             # Base de datos SQLite
+│   └── db/
+│       └── staticl10n.db         # Base de datos SQLite
 ├── projects/                     # Generado en runtime, ignorado en git
 │   └── <project-slug>/
 │       ├── config.json           # Config de cada proyecto
