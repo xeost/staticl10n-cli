@@ -10,7 +10,7 @@
 # - Otherwise (lower or equal priority), we reuse the cached translation to save tokens.
 model_priorities:
   - manual
-  - gemma4
+  - gemma4:e4b-mlx
   - gemma3:12b
   - llama3.1
 

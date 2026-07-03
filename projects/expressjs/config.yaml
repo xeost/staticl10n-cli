@@ -1,15 +1,15 @@
 # Display name of the project (shown in the interactive UI)
-name: FastAPI
+name: Express.js
 
 # Unique identifier — also used as the folder name under projects/
-slug: fastapi
+slug: expressjs
 
 # URL of the source site to crawl and translate
-url: "https://fastapi.tiangolo.com"
+url: "https://expressjs.com"
 
 # Deployed URLs for each translated language (used to generate hreflang tags and rewrite links)
 targetUrls:
-  es: fastapi.esdocu.com
+  es: expressjs.esdocu.com
 
 # Site type: "generic" (Hugo, Astro, VitePress, Jekyll…) or "nextjs" (Next.js app with React hydration)
 siteType: generic
@@ -20,10 +20,10 @@ crawl:
   # Additional random delay per request (helps avoid bot detection)
   delayJitterMs: 500
   # Maximum number of pages to crawl (set to a high value to crawl everything)
-  maxPages: 5000
+  maxPages: 50000
   # Blocklist mode: skip URLs whose pathname contains any of these strings (patterns starting with ^ or ending with $ are evaluated as regex)
   # Use this to exclude sections like /blog/, /api/, /admin/, other language prefixes, etc.
-  ignorePatterns: ["^/es$", "^/es/", "^/de$", "^/de/", "^/fr$", "^/fr/", "^/hi$", "^/hi/", "^/ja$", "^/ja/", "^/ko$", "^/ko/", "^/pt$", "^/pt/", "^/ru$", "^/ru/", "^/tr$", "^/tr/", "^/uk$", "^/uk/", "^/zh-hant$", "^/zh-hant/", "^/zh$", "^/zh/"]
+  ignorePatterns: ["^/de$", "^/de/", "^/es$", "^/es/", "^/fr$", "^/fr/", "^/it$", "^/it/",  "^/ja$", "^/ja/",  "^/ko$", "^/ko/",  "^/pt-br$", "^/pt-br/",  "^/zh-cn$", "^/zh-cn/",  "^/zh-tw$", "^/zh-tw/"]
   # Strip trailing slashes from crawled URLs for consistent deduplication
   normalizeTrailingSlash: true
   # Remove query parameters from crawled URLs (keeps ?lang=, ?v=... out of the page list)
@@ -33,14 +33,14 @@ crawl:
 
 paths:
   # Where processed + pre-personalized HTML files are saved (Stage 1 output)
-  original: /Users/fabian/Documents/CodeProjects/github.com/esdocu/fastapi/original
+  original: /Users/fabian/Documents/CodeProjects/github.com/esdocu/expressjs/original
   # Where raw Playwright HTML is saved (used for reprocessing without re-crawling)
-  raw: /Users/fabian/Documents/CodeProjects/github.com/esdocu/fastapi/raw
+  raw: /Users/fabian/Documents/CodeProjects/github.com/esdocu/expressjs/raw
   # Where temporary metadata and cache files are saved
-  tmp: /Users/fabian/Documents/CodeProjects/github.com/esdocu/fastapi/tmp
+  tmp: /Users/fabian/Documents/CodeProjects/github.com/esdocu/expressjs/tmp
   # Output directories per target language
   translations:
-      es: /Users/fabian/Documents/CodeProjects/github.com/esdocu/fastapi/es
+      es: /Users/fabian/Documents/CodeProjects/github.com/esdocu/expressjs/es
 
 translation:
   # Translation provider: "ollama" (local, no API key) or "gemini" (Google Gemini API)
@@ -65,63 +65,137 @@ translation:
   # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
   cacheExpiry: -1
   # Optional context injected into the translation prompt (describe the site for better accuracy)
-  context: "Official documentation for FastAPI, a modern, fast (high-performance), web framework for building APIs with Python 3.8+ based on standard Python type hints."
+  context: "Official documentation for Express, a minimal and flexible Node.js web application framework. Covers routing, middleware, template engines, database integration, security, performance, and the Express API reference (Application, Request, Response, and Router)."
   # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
   preserveTerms:
-    - FastAPI
-    - Python
-    - Pydantic
-    - Starlette
-    - Uvicorn
-    - OpenAPI
-    - Swagger UI
-    - ReDoc
-    - JSON Schema
-    - OAuth2
-    - JWT
-    - CORS
-    - SQLModel
-    - SQLAlchemy
-    - Docker
-    - Type hints
-    - Dependency Injection
-    - WebSockets
-    - GraphQL
+    - Express
+    - Node.js
+    - Node
+    - JavaScript
+    - TypeScript
     - API
     - CLI
+    - HTML
+    - CSS
     - JSON
     - YAML
-    - Pip
-    - Poetry
-    - Conda
+    - npm
+    - pnpm
+    - yarn
     - Git
     - GitHub
+    - HTTP
+    - TCP
+    - URL
+    - URI
+    - SSL
+    - TLS
+    - middleware
+    - CORS
+    - REST
+    - MVC
+    - Cookie
+    - Session
+    - express-generator
+    - nodemon
+    - PM2
+    - Docker
+    - Nginx
+    - Socket.io
+    - WebSockets
+    - Pug
+    - EJS
+    - Mustache
+    - Jade
+    - MongoDB
+    - Mongoose
+    - PostgreSQL
+    - MySQL
+    - Redis
+    - req
+    - res
+    - next
+    - app
+    - Router
+    - Request
+    - Response
+    - Application
+    - app.use
+    - app.get
+    - app.post
+    - app.put
+    - app.delete
+    - app.all
+    - app.param
+    - app.route
+    - app.listen
+    - app.engine
+    - app.set
+    - app.enable
+    - app.disable
+    - app.enabled
+    - app.disabled
+    - app.locals
+    - app.mountpath
+    - app.path
+    - req.params
+    - req.query
+    - req.body
+    - req.cookies
+    - req.headers
+    - req.ip
+    - req.method
+    - req.originalUrl
+    - req.path
+    - req.protocol
+    - req.secure
+    - req.signedCookies
+    - req.stale
+    - req.subdomains
+    - req.xhr
+    - res.send
+    - res.json
+    - res.status
+    - res.end
+    - res.redirect
+    - res.render
+    - res.sendFile
+    - res.sendStatus
+    - res.set
+    - res.type
+    - res.headersSent
+    - res.locals
+    - res.append
+    - res.attachment
+    - res.cookie
+    - res.clearCookie
+    - res.download
+    - res.format
+    - res.get
+    - res.links
+    - res.location
+    - res.vary
+    - router.use
+    - router.param
+    - router.route
+    - router.all
+    - express.json
+    - express.static
+    - express.Router
+    - express.urlencoded
+    - express.raw
+    - express.text
   # Set to true to translate comment spans inside <pre><code> blocks (default: true)
   translateCodeBlockComments: true
 
 personalization:
   # Rules applied at the end of Stage 1, BEFORE translation
   # Use to remove analytics, tracking scripts, cookie banners, ads, etc.
-  preTranslation:
-    - type: remove_element
-      selector: "div.md-header__option"
-      description: Remove language selector
-    - type: remove_element
-      selector: "script[src*='cloudflareinsights.com']"
-      description: Remove Cloudflare Pages Analytics
-    - type: remove_element
-      selector: "div[data-md-component='announce']"
-      description: Remove announcement banner
+  preTranslation: []
   # Rules applied AFTER translation (applied automatically during translation/build for both AI and manual modes)
   # Use to inject banners, replace copyright text, rename page titles, etc.
   # Add "languages: [es, fr]" to a rule to restrict it to specific language outputs.
-  postTranslation:
-    - type: replace_text
-      selector: "head > title"
-      search: FastAPI
-      replace: FastAPI en Español
-      languages: ["es"]
-      description: Rename page titles for the Spanish translation
+  postTranslation: []
 
 # How to handle static assets (CSS, JS, images, fonts): "copy" (default) or "symlink"
 copyAssetsMode: copy

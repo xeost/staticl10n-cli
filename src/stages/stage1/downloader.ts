@@ -76,8 +76,16 @@ export async function downloadAssets(
           }
         }
       } else {
-        logger.warn(`Asset returned ${response.status()}: ${assetUrl}`);
-        failed++;
+        if (response.status() === 404 && assetUrl.endsWith('.json')) {
+          // Write an empty JSON object to prevent local dev servers from serving fallback HTML
+          fs.ensureDirSync(path.dirname(localAbsPath));
+          fs.writeFileSync(localAbsPath, '{}');
+          assetMap.set(assetUrl, localRelPath);
+          downloaded++;
+        } else {
+          logger.warn(`Asset returned ${response.status()}: ${assetUrl}`);
+          failed++;
+        }
       }
     } catch (err) {
       logger.warn(`Failed to download asset ${assetUrl}: ${(err as Error).message}`);
@@ -146,6 +154,23 @@ function collectAssetUrls(html: string, pageUrl: string): string[] {
       }
     },
   );
+
+  // Parse __config JSON block if present to download search worker and search index
+  const configScript = $('script#__config').html();
+  if (configScript) {
+    try {
+      const parsedConfig = JSON.parse(configScript.trim());
+      if (parsedConfig.search) {
+        resolve(parsedConfig.search);
+      }
+    } catch {
+      // Ignore invalid JSON
+    }
+    // Download search index and version files relative to origin
+    resolve('/search/search_index.json');
+    resolve('/search.json');
+    resolve('/versions.json');
+  }
 
   return Array.from(urls);
 }

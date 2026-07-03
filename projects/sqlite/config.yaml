@@ -1,15 +1,15 @@
 # Display name of the project (shown in the interactive UI)
-name: FastAPI
+name: SQLite
 
 # Unique identifier — also used as the folder name under projects/
-slug: fastapi
+slug: sqlite
 
 # URL of the source site to crawl and translate
-url: "https://fastapi.tiangolo.com"
+url: "https://sqlite.org"
 
 # Deployed URLs for each translated language (used to generate hreflang tags and rewrite links)
 targetUrls:
-  es: fastapi.esdocu.com
+  es: sqlite.esdocu.com
 
 # Site type: "generic" (Hugo, Astro, VitePress, Jekyll…) or "nextjs" (Next.js app with React hydration)
 siteType: generic
@@ -23,7 +23,7 @@ crawl:
   maxPages: 5000
   # Blocklist mode: skip URLs whose pathname contains any of these strings (patterns starting with ^ or ending with $ are evaluated as regex)
   # Use this to exclude sections like /blog/, /api/, /admin/, other language prefixes, etc.
-  ignorePatterns: ["^/es$", "^/es/", "^/de$", "^/de/", "^/fr$", "^/fr/", "^/hi$", "^/hi/", "^/ja$", "^/ja/", "^/ko$", "^/ko/", "^/pt$", "^/pt/", "^/ru$", "^/ru/", "^/tr$", "^/tr/", "^/uk$", "^/uk/", "^/zh-hant$", "^/zh-hant/", "^/zh$", "^/zh/"]
+  ignorePatterns: []
   # Strip trailing slashes from crawled URLs for consistent deduplication
   normalizeTrailingSlash: true
   # Remove query parameters from crawled URLs (keeps ?lang=, ?v=... out of the page list)
@@ -33,14 +33,14 @@ crawl:
 
 paths:
   # Where processed + pre-personalized HTML files are saved (Stage 1 output)
-  original: /Users/fabian/Documents/CodeProjects/github.com/esdocu/fastapi/original
+  original: /Users/fabian/Documents/CodeProjects/github.com/esdocu/sqlite/original
   # Where raw Playwright HTML is saved (used for reprocessing without re-crawling)
-  raw: /Users/fabian/Documents/CodeProjects/github.com/esdocu/fastapi/raw
+  raw: /Users/fabian/Documents/CodeProjects/github.com/esdocu/sqlite/raw
   # Where temporary metadata and cache files are saved
-  tmp: /Users/fabian/Documents/CodeProjects/github.com/esdocu/fastapi/tmp
+  tmp: /Users/fabian/Documents/CodeProjects/github.com/esdocu/sqlite/tmp
   # Output directories per target language
   translations:
-      es: /Users/fabian/Documents/CodeProjects/github.com/esdocu/fastapi/es
+      es: /Users/fabian/Documents/CodeProjects/github.com/esdocu/sqlite/es
 
 translation:
   # Translation provider: "ollama" (local, no API key) or "gemini" (Google Gemini API)
@@ -49,9 +49,10 @@ translation:
   ollamaUrl: "http://localhost:11434"
   # Model name or list of models for multi-model fallback (tried in order on failure)
   # Comment out any model to temporarily disable it
-  model: 
-    - llama3.1
-    - gemma4
+  model:
+    - gemma4:e4b-mlx
+    # - llama3.1
+    # - gemma4
   # Language code of the source content (ISO 639-1, e.g. "en", "es", "fr")
   sourceLanguage: en
   # Target languages to translate into (must match keys in targetUrls and paths.translations)
@@ -65,63 +66,20 @@ translation:
   # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
   cacheExpiry: -1
   # Optional context injected into the translation prompt (describe the site for better accuracy)
-  context: "Official documentation for FastAPI, a modern, fast (high-performance), web framework for building APIs with Python 3.8+ based on standard Python type hints."
+  context: ""
   # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
-  preserveTerms:
-    - FastAPI
-    - Python
-    - Pydantic
-    - Starlette
-    - Uvicorn
-    - OpenAPI
-    - Swagger UI
-    - ReDoc
-    - JSON Schema
-    - OAuth2
-    - JWT
-    - CORS
-    - SQLModel
-    - SQLAlchemy
-    - Docker
-    - Type hints
-    - Dependency Injection
-    - WebSockets
-    - GraphQL
-    - API
-    - CLI
-    - JSON
-    - YAML
-    - Pip
-    - Poetry
-    - Conda
-    - Git
-    - GitHub
+  preserveTerms: []
   # Set to true to translate comment spans inside <pre><code> blocks (default: true)
   translateCodeBlockComments: true
 
 personalization:
   # Rules applied at the end of Stage 1, BEFORE translation
   # Use to remove analytics, tracking scripts, cookie banners, ads, etc.
-  preTranslation:
-    - type: remove_element
-      selector: "div.md-header__option"
-      description: Remove language selector
-    - type: remove_element
-      selector: "script[src*='cloudflareinsights.com']"
-      description: Remove Cloudflare Pages Analytics
-    - type: remove_element
-      selector: "div[data-md-component='announce']"
-      description: Remove announcement banner
+  preTranslation: []
   # Rules applied AFTER translation (applied automatically during translation/build for both AI and manual modes)
   # Use to inject banners, replace copyright text, rename page titles, etc.
   # Add "languages: [es, fr]" to a rule to restrict it to specific language outputs.
-  postTranslation:
-    - type: replace_text
-      selector: "head > title"
-      search: FastAPI
-      replace: FastAPI en Español
-      languages: ["es"]
-      description: Rename page titles for the Spanish translation
+  postTranslation: []
 
 # How to handle static assets (CSS, JS, images, fonts): "copy" (default) or "symlink"
 copyAssetsMode: copy

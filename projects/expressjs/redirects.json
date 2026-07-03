@@ -1,0 +1,13 @@
+{
+  "detectedAt": "2026-07-01T01:16:58.862Z",
+  "totalRedirects": 1,
+  "redirects": [
+    {
+      "from": "/",
+      "to": "/en",
+      "statusCode": 307,
+      "detectedDuring": "crawl"
+    }
+  ],
+  "manual": []
+}
