@@ -139,8 +139,13 @@ async function createProjectMenu(): Promise<void> {
     const colonIdx = trimmed.indexOf(':');
     if (colonIdx > 0) {
       const lang = trimmed.slice(0, colonIdx).trim();
-      const url = trimmed.slice(colonIdx + 1).trim();
-      if (lang && url) targetUrls[lang] = url;
+      let url = trimmed.slice(colonIdx + 1).trim();
+      if (lang && url) {
+        if (!/^https?:\/\//i.test(url)) {
+          url = 'https://' + url;
+        }
+        targetUrls[lang] = url;
+      }
     }
   }
 

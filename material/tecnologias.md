@@ -88,7 +88,7 @@
   - MkDocs (Material)
   - Categoría: Frameworks y APIs (Backend)
   - Ya tiene traducción: la sección learn sí pero la referencia no
-  - Traducido: EN PROCESO
+  - Traducido: SI
 
 - Redis
   - Almacén de estructura de datos en memoria, usado habitualmente como base de datos ultrarrápida o caché.
@@ -116,7 +116,7 @@
   - Express
   - Categoría: Frameworks y APIs (Backend)
   - Ya tiene traducción: la documentación sí pero la referencia y el blog no
-  - Traducido: PENDIENTE
+  - Traducido: EN PROCESO
 
 - SQLite
   - Motor de base de datos SQL escrito en C, altamente confiable, integrado y que no requiere configuración.

@@ -9,7 +9,7 @@ url: "https://fastapi.tiangolo.com"
 
 # Deployed URLs for each translated language (used to generate hreflang tags and rewrite links)
 targetUrls:
-  es: fastapi.esdocu.com
+  es: https://fastapi.esdocu.com
 
 # Site type: "generic" (Hugo, Astro, VitePress, Jekyll…) or "nextjs" (Next.js app with React hydration)
 siteType: generic

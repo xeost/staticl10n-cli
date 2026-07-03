@@ -9,7 +9,7 @@ url: "https://react.dev"
 
 # Deployed URLs for each translated language (used to generate hreflang tags and rewrite links)
 targetUrls:
-  es: react.esdocu.com
+  es: https://react.esdocu.com
 
 # Site type: "generic" (Hugo, Astro, VitePress, Jekyll…) or "nextjs" (Next.js app with React hydration)
 siteType: nextjs
