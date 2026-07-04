@@ -1,4 +1,5 @@
 import { execSync } from 'child_process';
+import path from 'path';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 import type { SiteType } from '../../core/config.js';
@@ -128,6 +129,13 @@ async function createProjectMenu(): Promise<void> {
       type: 'input',
       name: 'outputBaseDir',
       message: 'Output base directory (absolute path, e.g. /data/my-project):',
+      default: () => {
+        const base = process.env.DEFAULT_OUTPUT_BASE_DIR;
+        if (base) {
+          return path.join(base, slugify(name));
+        }
+        return undefined;
+      },
       validate: (v: string) => (v.startsWith('/') ? true : 'Enter an absolute path'),
     },
   ]);
