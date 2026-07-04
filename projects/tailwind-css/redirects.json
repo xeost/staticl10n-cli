@@ -1,0 +1,31 @@
+{
+  "detectedAt": "2026-07-04T18:39:40.867Z",
+  "totalRedirects": 4,
+  "redirects": [
+    {
+      "from": "/docs",
+      "to": "/docs/installation/using-vite",
+      "statusCode": 307,
+      "detectedDuring": "crawl"
+    },
+    {
+      "from": "/docs/installation",
+      "to": "/docs/installation/using-vite",
+      "statusCode": 307,
+      "detectedDuring": "crawl"
+    },
+    {
+      "from": "/docs/text-color",
+      "to": "/docs/color",
+      "statusCode": 307,
+      "detectedDuring": "crawl"
+    },
+    {
+      "from": "/sponsor",
+      "to": "/partners",
+      "statusCode": 307,
+      "detectedDuring": "crawl"
+    }
+  ],
+  "manual": []
+}

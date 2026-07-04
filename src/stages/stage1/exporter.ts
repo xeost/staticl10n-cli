@@ -65,13 +65,22 @@ export async function capturePages(
     for (const pageRow of pages) {
       const playwrightPage = await context.newPage();
       try {
-        await playwrightPage.goto(pageRow.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        const navigationResponse = await playwrightPage.goto(pageRow.url, {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000,
+        });
 
-        // Run the adapter's before-capture hook (e.g. wait for hydration)
+        // Run the adapter's before-capture hook (e.g. wait for hydration).
+        // This still runs even when the adapter overrides getRawHtml() below,
+        // since it also ensures lazily-loaded assets are requested/discovered.
         await adapter.beforeCapture(playwrightPage, config);
 
-        // Capture the final DOM
-        const rawHtml = await playwrightPage.content();
+        // Capture the page HTML. Adapters may override this (see getRawHtml
+        // docs in base.ts) to return the original network response body
+        // instead of the live, potentially post-hydration DOM.
+        const rawHtml = adapter.getRawHtml
+          ? await adapter.getRawHtml(playwrightPage, navigationResponse)
+          : await playwrightPage.content();
 
         // Save raw HTML before any processing
         const rawFilePath = path.join(config.paths.raw, pageRow.path);

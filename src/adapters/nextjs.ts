@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio';
 import fs from 'fs-extra';
 import path from 'path';
-import type { Page } from 'playwright';
+import type { Page, Response } from 'playwright';
 import type { ProjectConfig } from '../core/config.js';
 import { delay } from '../utils/delay.js';
 import { logger } from '../utils/logger.js';
@@ -54,8 +54,60 @@ export class NextjsAdapter implements SiteAdapter {
     await delay(postHydrationDelay);
   }
 
+  async getRawHtml(_page: Page, navigationResponse: Response | null): Promise<string> {
+    // Return the original server response body rather than page.content().
+    //
+    // Next.js (App Router) streams a flight/RSC payload alongside the SSR
+    // HTML describing the pristine server-rendered tree. `page.content()`
+    // (taken after beforeCapture() waits for hydration) reflects the DOM
+    // *after* React has committed hydration-time mutations — e.g. the
+    // anti-FOUC theme script's classList changes on <html>. That mutated
+    // snapshot no longer matches the embedded flight payload byte-for-byte,
+    // so every real visitor's browser fails to hydrate it (React error
+    // #418) and falls back to a full client-side re-render, wiping any
+    // class/attribute the original SSR response had that the client render
+    // doesn't explicitly restore (this is what caused broken theme/layout
+    // styles until the user manually set an explicit theme preference).
+    // Using the untouched response body keeps the HTML and flight payload
+    // in sync, exactly like a real (uncached) request to the live site.
+    if (navigationResponse) {
+      try {
+        return await navigationResponse.text();
+      } catch {
+        // Fall through to page.content() if the response body is unavailable
+        // (e.g. already consumed or navigated away).
+      }
+    }
+    return _page.content();
+  }
+
   async processHTML(html: string, pageUrl: string, _config: ProjectConfig): Promise<string> {
     const $ = cheerio.load(html);
+
+    // ── 0. Strip runtime theme classes baked into <html> by the capture browser ──
+    // beforeCapture() waits for hydration before the DOM is serialized, so the
+    // captured markup already reflects classes added by the site's anti-FOUC
+    // theme script (e.g. "light"/"dark"/"system", "os-macos") — classes that a
+    // real Next.js server response never includes (they're only ever applied by
+    // client-side JS). The RSC/flight payload embedded further down in the page
+    // still describes the pristine, class-less server render. Serving the
+    // mutated class list as if it were the original SSR output makes every
+    // real visitor's hydration mismatch (React error #418) on <html>, which
+    // forces a full client-side re-render and wipes any class not explicitly
+    // re-applied by a React effect (breaking layout/theme CSS until the user
+    // manually triggers a theme change that stores an explicit preference).
+    // Stripping these classes back out restores the exact state the live
+    // server would emit, so the site's own inline script re-adds them
+    // consistently and hydration matches on first load.
+    const DYNAMIC_THEME_CLASSES = new Set(['light', 'dark', 'system', 'os-macos']);
+    const htmlEl = $('html').first();
+    const htmlClass = htmlEl.attr('class');
+    if (htmlClass) {
+      const filtered = htmlClass
+        .split(/\s+/)
+        .filter((c) => c && !DYNAMIC_THEME_CLASSES.has(c));
+      htmlEl.attr('class', filtered.join(' '));
+    }
 
     // ── 1. Rewrite Next.js image optimization URLs ─────────────────────────
     $('img').each((_, el) => {
