@@ -180,28 +180,58 @@ export function generateRuntimePatch(
   }
 
   function init() {
-    walk(document.body);
-
+    // IMPORTANT: do NOT call walk() here. walk() mutates the DOM (innerHTML/attributes)
+    // synchronously, and init() runs as soon as this deferred script executes — which
+    // can be before or during React's hydration pass. Mutating the DOM at that point
+    // races with hydration and triggers a hard hydration mismatch (React error #418),
+    // causing React to discard the whole subtree via a full client-side re-render
+    // (reverting to the original, untranslated JSX and wiping other DOM attributes).
+    // walk() is only safe to call from the MutationObserver below, for nodes added
+    // after hydration has already completed (e.g. client-side navigations).
     // Cache element references NOW, before React hydration removes data-sl-id attributes.
     document.querySelectorAll('[data-sl-id]').forEach(function(el) {
       var id = el.getAttribute('data-sl-id');
       if (id && F[id] !== undefined) entries.push({ el: el, id: id });
     });
 
-    // Wait for React hydration to finish (browser idle), then re-apply and reveal.
+    // Wait for React hydration to finish, then re-apply and reveal.
     // IMPORTANT: applyAll() calls observer.observe() for the first time here, NOT at
     // the top level. The observer must NOT run during React hydration — doing so would
     // trigger applyAll() mid-hydration (setting innerHTML while React reconciles),
     // which corrupts the fiber tree and breaks all event handlers (theme toggle, etc.).
+    //
+    // requestIdleCallback is NOT a reliable "hydration finished" signal: it fires as
+    // soon as the main thread is idle for a moment, which can happen WHILE React is
+    // still waiting on async chunks (e.g. Suspense boundaries / lazy client components)
+    // — i.e. well before hydration has actually completed. Applying translations at
+    // that point still races with hydration and reproduces the same #418 mismatch.
+    // Instead, detect quiescence: watch document.body for mutations (hydration causes
+    // a burst of DOM activity while it attaches listeners / commits lazy chunks) and
+    // only run afterHydration() once no mutation has been observed for SETTLE_MS.
+    // A maximum wait caps how long a pathological page can stay hidden.
+    var SETTLE_MS = 300;
+    var MAX_WAIT_MS = 4000;
+    var settled = false;
+    var settleTimer = null;
+
     function afterHydration() {
+      if (settled) return;
+      settled = true;
+      preHydrationObserver.disconnect();
       applyAll();
       reveal();
     }
-    if (window.requestIdleCallback) {
-      requestIdleCallback(afterHydration, { timeout: 2500 });
-    } else {
-      setTimeout(afterHydration, 1200);
+
+    function scheduleSettleCheck() {
+      if (settled) return;
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(afterHydration, SETTLE_MS);
     }
+
+    var preHydrationObserver = new MutationObserver(scheduleSettleCheck);
+    preHydrationObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
+    scheduleSettleCheck();
+    setTimeout(afterHydration, MAX_WAIT_MS);
   }
 
   if (document.body) {
@@ -210,8 +240,8 @@ export function generateRuntimePatch(
     document.addEventListener('DOMContentLoaded', init);
   }
 
-  // Absolute safety net: reveal even if requestIdleCallback never fires.
-  setTimeout(reveal, 5000);
+  // Absolute safety net: reveal even if the settle-detection above never fires.
+  setTimeout(reveal, 6000);
 
   // After initial hydration, watch for React re-renders that overwrite translations.
   // If any of our tracked elements (or their children) are mutated, re-apply.

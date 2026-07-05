@@ -66,9 +66,33 @@ translation:
   # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
   cacheExpiry: -1
   # Optional context injected into the translation prompt (describe the site for better accuracy)
-  context: ""
+  context: "Official documentation for SQLite, a small, fast, self-contained, high-reliability, full-featured SQL database engine library written in C. Covers SQL syntax, database features, C-language API references, storage classes, transactions (rollback journal, WAL mode), constraints, query planner optimization, and CLI tools."
   # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
-  preserveTerms: []
+  preserveTerms:
+    - SQLite
+    - SQL
+    - SQLite3
+    - sqlite3
+    - API
+    - CLI
+    - WAL
+    - WAL mode
+    - rollback journal
+    - PRAGMA
+    - AUTOINCREMENT
+    - autoincrement
+    - ROWID
+    - rowid
+    - BLOB
+    - NULL
+    - INTEGER
+    - REAL
+    - TEXT
+    - storage classes
+    - query planner
+    - foreign keys
+    - primary key
+    - database engine
   # Set to true to translate comment spans inside <pre><code> blocks (default: true)
   translateCodeBlockComments: true
 

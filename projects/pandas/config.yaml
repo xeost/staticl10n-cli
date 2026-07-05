@@ -77,9 +77,43 @@ translation:
   # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
   cacheExpiry: -1
   # Optional context injected into the translation prompt (describe the site for better accuracy)
-  context: ""
+  context: "Official documentation for pandas, a fast, powerful, flexible and easy-to-use open source data analysis and manipulation library for the Python programming language. Covers DataFrames, Series, data selection, alignment, indexing, GroupBy operations, reshaping, merging, plotting, time series, and I/O tools (such as read_csv, read_excel)."
   # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
-  preserveTerms: []
+  preserveTerms:
+    - pandas
+    - Python
+    - NumPy
+    - DataFrame
+    - Series
+    - Index
+    - GroupBy
+    - MultiIndex
+    - CSV
+    - JSON
+    - SQL
+    - Excel
+    - HTML
+    - API
+    - CLI
+    - Matplotlib
+    - Seaborn
+    - SciPy
+    - Jupyter
+    - Jupyter Notebook
+    - JupyterLab
+    - Anaconda
+    - pip
+    - conda
+    - read_csv
+    - read_excel
+    - read_json
+    - read_sql
+    - to_csv
+    - to_excel
+    - to_json
+    - nan
+    - NaN
+    - NaT
   # Set to true to translate comment spans inside <pre><code> blocks (default: true)
   translateCodeBlockComments: true
 

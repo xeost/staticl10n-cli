@@ -26,7 +26,8 @@ export async function stage1Menu(projectSlug: string, config: ProjectConfig): Pr
         { name: 'Detect URLs: Stage 2 (Import paths)', value: 'crawl-import' },
         { name: 'Import path manually', value: 'import-manual' },
         { name: 'Capture pending pages', value: 'capture' },
-        { name: 'Re-capture specific page', value: 'recapture' },
+        { name: 'Capture all pages', value: 'capture-all' },
+        { name: 'Capture specific page', value: 'capture-specific' },
         { name: 'View captured pages', value: 'view' },
         { name: 'View detected redirects', value: 'view-redirects' },
         { name: 'Regenerate _redirects file', value: 'regen-redirects' },
@@ -60,8 +61,11 @@ export async function stage1Menu(projectSlug: string, config: ProjectConfig): Pr
       case 'capture':
         await runCapture(projectSlug, config);
         break;
-      case 'recapture':
-        await runRecapture(projectSlug, config);
+      case 'capture-all':
+        await runCaptureAll(projectSlug, config);
+        break;
+      case 'capture-specific':
+        await runCaptureSpecific(projectSlug, config);
         break;
       case 'view':
         viewPages(projectSlug);
@@ -336,7 +340,35 @@ async function runCapture(projectSlug: string, config: ProjectConfig): Promise<v
   }
 }
 
-async function runRecapture(projectSlug: string, config: ProjectConfig): Promise<void> {
+async function runCaptureAll(projectSlug: string, config: ProjectConfig): Promise<void> {
+  const project = dbGetProjectBySlug(projectSlug)!;
+  const pages = dbGetPagesByProject(project.id);
+
+  if (pages.length === 0) {
+    logger.info('No pages found to capture. Run the crawler or import pages first.');
+    return;
+  }
+
+  const bar = new cliProgress.SingleBar(
+    { format: 'Capturing | {bar} | {value}/{total} pages' },
+    cliProgress.Presets.shades_classic,
+  );
+  bar.start(pages.length, 0);
+
+  try {
+    const result = await capturePages(projectSlug, config, (_url, done, total) => {
+      bar.setTotal(total);
+      bar.update(done);
+    }, undefined, true);
+    bar.stop();
+    logger.success(`Capture complete: ${result.captured} captured, ${result.failed} failed.`);
+  } catch (err) {
+    bar.stop();
+    logger.error(`Capture failed: ${(err as Error).message}`);
+  }
+}
+
+async function runCaptureSpecific(projectSlug: string, config: ProjectConfig): Promise<void> {
   const project = dbGetProjectBySlug(projectSlug)!;
   const pages = dbGetPagesByProject(project.id);
 
@@ -349,7 +381,7 @@ async function runRecapture(projectSlug: string, config: ProjectConfig): Promise
     {
       type: 'list',
       name: 'url',
-      message: 'Select page to re-capture:',
+      message: 'Select page to capture:',
       choices: [
         ...pages.map((p) => ({ name: `[${p.status}] ${p.url}`, value: p.url })),
         new inquirer.Separator(),
@@ -360,18 +392,18 @@ async function runRecapture(projectSlug: string, config: ProjectConfig): Promise
 
   if (url === 'back') return;
 
-  const spinner = ora(`Re-capturing ${url}...`).start();
+  const spinner = ora(`Capturing ${url}...`).start();
   try {
     const result = await capturePages(projectSlug, config, undefined, url);
     spinner.stop();
     if (result.captured > 0) {
-      logger.success(`Re-captured successfully: ${url}`);
+      logger.success(`Captured successfully: ${url}`);
     } else {
-      logger.warn(`Re-capture failed for: ${url}`);
+      logger.warn(`Capture failed for: ${url}`);
     }
   } catch (err) {
     spinner.stop();
-    logger.error(`Re-capture error: ${(err as Error).message}`);
+    logger.error(`Capture error: ${(err as Error).message}`);
   }
 }
 

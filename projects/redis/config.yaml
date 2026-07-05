@@ -65,9 +65,47 @@ translation:
   # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
   cacheExpiry: -1
   # Optional context injected into the translation prompt (describe the site for better accuracy)
-  context: ""
+  context: "Official documentation for Redis, an open-source, in-memory data structure store used as a database, cache, message broker, and streaming engine. Covers data types (strings, hashes, lists, sets, sorted sets), persistence (RDB, AOF), replication, Sentinel high availability, clustering, transactions, pub/sub, security, and client libraries."
   # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
-  preserveTerms: []
+  preserveTerms:
+    - Redis
+    - Sentinel
+    - Redis Sentinel
+    - Redis CLI
+    - redis-cli
+    - redis-server
+    - RDB
+    - AOF
+    - In-Memory
+    - CLI
+    - API
+    - SDK
+    - Lua
+    - Hash
+    - Hashes
+    - List
+    - Lists
+    - Set
+    - Sets
+    - Sorted Set
+    - Sorted Sets
+    - Bitmap
+    - Bitmaps
+    - HyperLogLog
+    - HyperLogLogs
+    - Pub/Sub
+    - TTL
+    - Eviction
+    - Cache
+    - Clustering
+    - Replica
+    - Replication
+    - Master-Replica
+    - Master-Slave
+    - Transaction
+    - Transactions
+    - Pipeline
+    - Pipelining
   # Set to true to translate comment spans inside <pre><code> blocks (default: true)
   translateCodeBlockComments: true
 

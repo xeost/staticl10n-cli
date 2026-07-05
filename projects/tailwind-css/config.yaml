@@ -65,9 +65,46 @@ translation:
   # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
   cacheExpiry: -1
   # Optional context injected into the translation prompt (describe the site for better accuracy)
-  context: ""
+  context: "Official documentation for Tailwind CSS, a utility-first CSS framework. It covers concepts like utility classes, responsive design, hover/focus/active/disabled states, dark mode, custom styling, functions & directives, Tailwind CLI, PostCSS integration, JIT engine, and optimization for production."
   # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
-  preserveTerms: []
+  preserveTerms:
+    - Tailwind
+    - Tailwind CSS
+    - CSS
+    - HTML
+    - JavaScript
+    - TypeScript
+    - JSX
+    - TSX
+    - npm
+    - pnpm
+    - yarn
+    - Node.js
+    - Vite
+    - PostCSS
+    - Autoprefixer
+    - PurgeCSS
+    - JIT
+    - CDN
+    - CLI
+    - IntelliSense
+    - VSCode
+    - Prettier
+    - ESLint
+    - Sass
+    - SCSS
+    - Less
+    - React
+    - Vue
+    - Svelte
+    - Next.js
+    - Nuxt
+    - Laravel
+    - Rails
+    - Django
+    - Flexbox
+    - Grid
+    - API
   # Set to true to translate comment spans inside <pre><code> blocks (default: true)
   translateCodeBlockComments: true
 

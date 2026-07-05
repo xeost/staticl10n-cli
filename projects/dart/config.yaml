@@ -65,9 +65,47 @@ translation:
   # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
   cacheExpiry: -1
   # Optional context injected into the translation prompt (describe the site for better accuracy)
-  context: ""
+  context: "Official documentation for the Dart programming language. Covers core language concepts (syntax, variables, operators, control flow, types, functions, classes, generics), asynchronous programming (Futures, Streams), sound null safety, compiler technologies (AOT, JIT), package manager (pub), command-line tools (dart analyze, dart format, dart run, dart test), and integration with the Flutter framework."
   # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
-  preserveTerms: []
+  preserveTerms:
+    - Dart
+    - Flutter
+    - SDK
+    - API
+    - CLI
+    - VM
+    - Dart VM
+    - pub
+    - pubspec
+    - pubspec.yaml
+    - pub.dev
+    - DevTools
+    - Hot Reload
+    - Hot Restart
+    - AOT
+    - JIT
+    - HTML
+    - CSS
+    - JavaScript
+    - TypeScript
+    - WebAssembly
+    - Wasm
+    - Futures
+    - Streams
+    - Future
+    - Stream
+    - async
+    - await
+    - Null Safety
+    - sound null safety
+    - linter
+    - analyzer
+    - dart analyzer
+    - dart compile
+    - dart doc
+    - dart format
+    - dart run
+    - dart test
   # Set to true to translate comment spans inside <pre><code> blocks (default: true)
   translateCodeBlockComments: true
 

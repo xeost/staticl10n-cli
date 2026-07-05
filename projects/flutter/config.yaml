@@ -65,9 +65,36 @@ translation:
   # Cache entry lifetime in seconds. -1 = no expiry | 0 = cache disabled | N = TTL in seconds
   cacheExpiry: -1
   # Optional context injected into the translation prompt (describe the site for better accuracy)
-  context: ""
+  context: "Official website for Flutter, a framework to build, test, and deploy beautiful mobile, web, desktop, and embedded apps from a single codebase. Focuses on marketing, showcase/case studies, ecosystem updates, community links, and downloads."
   # Terms that must never be translated (brand names, technical terms, trademarks, etc.)
-  preserveTerms: []
+  preserveTerms:
+    - Flutter
+    - Dart
+    - Material Design
+    - Cupertino
+    - Widget
+    - Widgets
+    - State
+    - Stateful
+    - Stateless
+    - SDK
+    - API
+    - CLI
+    - DevTools
+    - Hot Reload
+    - Hot Restart
+    - Android
+    - iOS
+    - macOS
+    - Windows
+    - Linux
+    - WebAssembly
+    - Wasm
+    - Skia
+    - Impeller
+    - HTML
+    - CSS
+    - JavaScript
   # Set to true to translate comment spans inside <pre><code> blocks (default: true)
   translateCodeBlockComments: true
 

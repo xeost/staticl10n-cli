@@ -34,6 +34,7 @@ export async function capturePages(
   config: ProjectConfig,
   onProgress?: (url: string, done: number, total: number) => void,
   targetUrl?: string,
+  forceAll?: boolean,
 ): Promise<ExportResult> {
   const project = dbGetProjectBySlug(projectSlug);
   if (!project) throw new Error(`Project "${projectSlug}" not found`);
@@ -45,7 +46,9 @@ export async function capturePages(
   const allPages = dbGetPagesByProject(project.id);
   let pages = targetUrl
     ? allPages.filter((p) => p.url === targetUrl)
-    : allPages.filter((p) => p.status === 'pending' || p.status === 'crawled');
+    : forceAll
+      ? allPages
+      : allPages.filter((p) => p.status === 'pending' || p.status === 'crawled');
 
   const total = pages.length;
   let captured = 0;

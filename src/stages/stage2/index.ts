@@ -120,11 +120,30 @@ export async function translateProject(
         // Start from the tagged HTML so injectTranslations can locate [data-sl-id] elements
         let translatedHtml = taggedHtml;
 
-        // Inject fragment translations into the HTML
-        translatedHtml = injectTranslations(translatedHtml, translatedTexts, fragments);
+        // For sites that need the runtime patch (e.g. Next.js), avoid baking translations
+        // statically into the HTML (see detailed explanation below).
+        const needsPatch = config.siteType === 'nextjs';
 
-        // Translate code comment spans inside <pre><code> blocks
-        if (config.translation.translateCodeBlockComments !== false) {
+        // For Next.js (and other hydrating frameworks), do NOT bake translated text/
+        // attributes into the static HTML. That HTML must stay byte-structurally
+        // identical to what the framework's embedded RSC/flight payload describes,
+        // or hydration fails (React error #418: server/client text mismatch) and
+        // React falls back to a full client-side re-render — discarding the static
+        // translation entirely and reverting the page to the original language (and
+        // wiping any DOM attributes our anti-FOUC scripts had set). The already
+        // hydration-safe translations.js runtime patch (generated below) applies
+        // these same translations to the DOM right after hydration completes, so
+        // the on-disk HTML only needs the [data-sl-id]/[data-sl-attr] markers.
+        if (!needsPatch) {
+          // Inject fragment translations into the HTML
+          translatedHtml = injectTranslations(translatedHtml, translatedTexts, fragments);
+        }
+
+        // Translate code comment spans inside <pre><code> blocks.
+        // Skipped for hydrating frameworks for the same reason as above — the
+        // runtime patch does not (yet) defend inline code comments, so translating
+        // them statically would risk the same hydration mismatch.
+        if (!needsPatch && config.translation.translateCodeBlockComments !== false) {
           const { html: commentHtml, cacheHits: chHits, cacheMisses: chMisses } =
             await translateCodeComments(translatedHtml, lang, project.id, config, isManualMode);
           translatedHtml = commentHtml;
@@ -188,7 +207,6 @@ export async function translateProject(
         const outputPath = rewritePath(pageRow.path, config.pathRewrite);
 
         // For sites that need the runtime patch (e.g. Next.js), generate translations.js
-        const needsPatch = config.siteType === 'nextjs';
         if (needsPatch) {
           translatedHtml = injectRuntimePatchReferences(translatedHtml);
           const patchContent = generateRuntimePatch(fragments, translatedTexts);

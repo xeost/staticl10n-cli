@@ -199,7 +199,15 @@ function buildPlaceholderText(
       return `<span id="${n}"></span>`;
     }
 
-    if (INLINE_TAGS.has(tag)) {
+    const isUnknownOrCustom =
+      tag &&
+      !BLOCK_TAGS.has(tag) &&
+      !SKIP_TAGS.has(tag) &&
+      !VOID_INLINE_TAGS.has(tag) &&
+      !ATOMIC_INLINE_TAGS.has(tag) &&
+      !INLINE_TAGS.has(tag);
+
+    if (INLINE_TAGS.has(tag) || isUnknownOrCustom) {
       const n = ++counter;
       placeholders.set(n, {
         name: tag,

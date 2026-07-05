@@ -600,6 +600,11 @@ function hasPromptLeakage(text: string): boolean {
  * Checks that every placeholder number (id attribute) and tag name
  * appears correctly in the translation.
  */
+function getTagName(tagMarkup: string): string | null {
+  const match = tagMarkup.match(/^<\/?([a-zA-Z0-9:-]+)/);
+  return match ? match[1].toLowerCase() : null;
+}
+
 export function verifyPlaceholderIntegrity(
   translated: string,
   originalText: string,
@@ -639,10 +644,18 @@ export function verifyPlaceholderIntegrity(
     }
   }
 
+  // Extract all tag names present in the original text (e.g. Transition, Popover)
+  const originalTags = originalText.match(/<[^>]+>/g) || [];
+  const allowedTagNames = new Set<string>();
+  for (const tag of originalTags) {
+    const name = getTagName(tag);
+    if (name) allowedTagNames.add(name);
+  }
+
   // Find all HTML tags in the raw translated string
   const allTags = translated.match(/<[^>]+>/g) || [];
 
-  // 1. All tags must be valid span tags: either <span ...> or </span>
+  // 1. All tags must be valid span tags: either <span ...> or </span>, or present in original text
   const openingSpanRegex = /^<span\b[^>]*>$/i;
   const closingSpanRegex = /^<\/span>$/i;
 
@@ -655,6 +668,10 @@ export function verifyPlaceholderIntegrity(
     } else if (closingSpanRegex.test(tag)) {
       countClosing++;
     } else {
+      const name = getTagName(tag);
+      if (name && allowedTagNames.has(name)) {
+        continue;
+      }
       const reason = `translation contains forbidden tag/markup: "${tag}"`;
       logWarning(reason);
       return { passed: false, reason };
@@ -679,45 +696,49 @@ export function verifyPlaceholderIntegrity(
   const $ = cheerio.load(translated);
 
   // 4. Strict tag structure validation:
-  // Every tag node in the parsed body must be a 'span' element and have a valid 'id' attribute matching one of our expected placeholder IDs.
+  // Every tag node in the parsed body must be a 'span' element (unless it's an allowed original tag) and have a valid 'id' attribute matching one of our expected placeholder IDs.
   let isValidStructure = true;
   let structureReason = '';
   $('body *').each((_i, el) => {
     if (el.type === 'tag') {
       const tag = el.tagName.toLowerCase();
-      if (tag !== 'span') {
+      if (tag === 'span') {
+        const idAttr = $(el).attr('id');
+        if (!idAttr) {
+          structureReason = `translation contains a <span> tag without an id attribute`;
+          logWarning(structureReason);
+          isValidStructure = false;
+          return false; // break each
+        }
+        const n = parseInt(idAttr, 10);
+        if (isNaN(n) || !placeholders || !placeholders.has(n)) {
+          structureReason = `translation contains unexpected placeholder id="${idAttr}"`;
+          logWarning(structureReason);
+          isValidStructure = false;
+          return false; // break each
+        }
+        const entry = placeholders.get(n);
+        if (entry) {
+          const isVoid = entry.close === '';
+          const isAtomic = entry.innerHTML !== undefined;
+          if (isVoid || isAtomic) {
+            const innerText = $(el).text().trim();
+            if (innerText.length > 0) {
+              structureReason = `placeholder id="${idAttr}" is void/atomic and must remain empty, but contains text: "${innerText}"`;
+              logWarning(structureReason);
+              isValidStructure = false;
+              return false; // break each
+            }
+          }
+        }
+      } else if (allowedTagNames.has(tag)) {
+        // Skip placeholder check for allowed custom tags/elements
+        return;
+      } else {
         structureReason = `translation contains forbidden tag <${tag}>`;
         logWarning(structureReason);
         isValidStructure = false;
         return false; // break each
-      }
-      const idAttr = $(el).attr('id');
-      if (!idAttr) {
-        structureReason = `translation contains a <span> tag without an id attribute`;
-        logWarning(structureReason);
-        isValidStructure = false;
-        return false; // break each
-      }
-      const n = parseInt(idAttr, 10);
-      if (isNaN(n) || !placeholders || !placeholders.has(n)) {
-        structureReason = `translation contains unexpected placeholder id="${idAttr}"`;
-        logWarning(structureReason);
-        isValidStructure = false;
-        return false; // break each
-      }
-      const entry = placeholders.get(n);
-      if (entry) {
-        const isVoid = entry.close === '';
-        const isAtomic = entry.innerHTML !== undefined;
-        if (isVoid || isAtomic) {
-          const innerText = $(el).text().trim();
-          if (innerText.length > 0) {
-            structureReason = `placeholder id="${idAttr}" is void/atomic and must remain empty, but contains text: "${innerText}"`;
-            logWarning(structureReason);
-            isValidStructure = false;
-            return false; // break each
-          }
-        }
       }
     }
   });
@@ -736,11 +757,26 @@ export function verifyPlaceholderIntegrity(
       }
     }
   } else {
-    // If no placeholders are expected, the output should not contain any tags.
-    if ($('body *').length > 0) {
-      const reason = `contains tags but none were expected`;
-      logWarning(reason);
-      return { passed: false, reason };
+    // If no placeholders are expected, the output should not contain any unexpected tags.
+    let hasUnexpectedTags = false;
+    let unexpectedReason = '';
+    $('body *').each((_i, el) => {
+      if (el.type === 'tag') {
+        const tag = el.tagName.toLowerCase();
+        if (tag === 'span') {
+          unexpectedReason = `contains placeholder <span> tags but none were expected`;
+          hasUnexpectedTags = true;
+          return false; // break
+        } else if (!allowedTagNames.has(tag)) {
+          unexpectedReason = `contains forbidden tag <${tag}>`;
+          hasUnexpectedTags = true;
+          return false; // break
+        }
+      }
+    });
+    if (hasUnexpectedTags) {
+      logWarning(unexpectedReason);
+      return { passed: false, reason: unexpectedReason };
     }
   }
 
