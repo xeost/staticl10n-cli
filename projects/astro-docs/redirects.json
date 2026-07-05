@@ -3,6 +3,7 @@
   "totalRedirects": 1,
   "redirects": [
     {
+      "disabled": false,
       "from": "/",
       "to": "/en/getting-started",
       "statusCode": 307,

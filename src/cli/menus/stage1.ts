@@ -419,13 +419,15 @@ function viewRedirects(projectSlug: string): void {
 
   console.log(chalk.bold(`\nDetected redirects (${data.redirects.length}) + manual (${data.manual.length}):\n`));
   for (const r of data.redirects) {
-    console.log(`  ${chalk.cyan(r.statusCode)}  ${chalk.yellow(r.from)}  →  ${chalk.green(r.to)}`);
+    const status = r.disabled ? chalk.gray(' (disabled)') : '';
+    console.log(`  ${chalk.cyan(r.statusCode)}  ${chalk.yellow(r.from)}  →  ${chalk.green(r.to)}${status}`);
   }
   if (data.manual.length > 0) {
     console.log(chalk.bold('\nManual:'));
     for (const r of data.manual) {
+      const status = r.disabled ? chalk.gray(' (disabled)') : '';
       const desc = r.description ? chalk.gray(` (${r.description})`) : '';
-      console.log(`  ${chalk.cyan(r.statusCode)}  ${chalk.yellow(r.from)}  →  ${chalk.green(r.to)}${desc}`);
+      console.log(`  ${chalk.cyan(r.statusCode)}  ${chalk.yellow(r.from)}  →  ${chalk.green(r.to)}${desc}${status}`);
     }
   }
   console.log();

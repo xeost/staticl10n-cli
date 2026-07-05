@@ -323,16 +323,21 @@ Redirects are handled across three distinct stages:
 
   // Populated automatically by the crawler
   "redirects": [
-    { "from": "/about-us", "to": "/about", "statusCode": 301, "detectedDuring": "crawl" },
-    { "from": "/services/", "to": "/services", "statusCode": 308, "detectedDuring": "crawl" }
+    { "from": "/about-us", "to": "/about", "statusCode": 301, "detectedDuring": "crawl", "disabled": false },
+    { "from": "/services/", "to": "/services", "statusCode": 308, "detectedDuring": "crawl", "disabled": false }
   ],
 
   // Add entries here manually for redirects not linked from any crawled page
   "manual": [
-    { "from": "/promo", "to": "/offers", "statusCode": 302, "description": "Campaign redirect" }
+    { "from": "/promo", "to": "/offers", "statusCode": 302, "description": "Campaign redirect", "disabled": false }
   ]
 }
 ```
+
+### Conflict Resolution & Disabling Redirects
+
+- **Automatic Conflict Detection**: When generating target-language outputs, staticl10n compares source and target paths against `pathRewrite` rules. If a redirect conflicts with these rules (e.g., redirecting from `/` to `/en` when `/en/` is rewritten to `/`, which would cause an infinite loop or point to non-existent paths on the translated site), it is automatically skipped during `_redirects` generation.
+- **Manual Disabling**: All redirect objects support a `"disabled"` boolean field (defaults to `false` when created/merging). You can manually change this to `true` in `redirects.json` to exclude the redirect from the generated `_redirects` file. The crawler preserves this setting on subsequent crawls so that the redirect is not re-enabled or re-crawled.
 
 ### Generated `_redirects` format
 
@@ -351,10 +356,10 @@ Under **Stage 1: Capture** in the interactive menu:
 
 | Option | Description |
 | --- | --- |
-| **View detected redirects** | Lists all entries from `redirects.json` with status codes |
+| **View detected redirects** | Lists all entries from `redirects.json` with status codes and disabled status |
 | **Regenerate _redirects file** | Re-generates `_redirects` in `original/` and all language directories from the current `redirects.json` |
 
-The **Regenerate** option is useful after manually adding entries to the `manual` array in `redirects.json`.
+The **Regenerate** option is useful after manually adding entries to the `manual` array in `redirects.json` or disabling existing ones.
 
 ---
 

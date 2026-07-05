@@ -3,234 +3,273 @@
   "totalRedirects": 39,
   "redirects": [
     {
+      "disabled": false,
       "from": "/go/next-gen-js-interop",
       "to": "/interop/js-interop",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/libraries/async",
       "to": "/libraries/dart-async",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/tools/pub",
       "to": "/tools/pub/packages",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/resources/language",
       "to": "/language",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/tools/diagnostic-messages",
       "to": "/tools/diagnostics",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/articles/libraries/zones",
       "to": "/libraries/async/zones",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/language/macros",
       "to": "/blog/an-update-on-dart-macros-data-serialization",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/go/pub-workspaces",
       "to": "/tools/pub/workspaces",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/go/json-codable",
       "to": "/blog/an-update-on-dart-macros-data-serialization",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/go/macros",
       "to": "/blog/an-update-on-dart-macros-data-serialization",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/go/package-web",
       "to": "/interop/js-interop/package-web",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/libraries/c-interop",
       "to": "/interop/c-interop",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/libraries/java-interop",
       "to": "/interop/java-interop",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/libraries/objective-c-interop",
       "to": "/interop/objective-c-interop",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/language/numbers",
       "to": "/resources/language/number-representation",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/tutorials/server/cmdline",
       "to": "/learn/tutorial",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/language/evolution",
       "to": "/resources/language/evolution",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/language/concurrency",
       "to": "/language/concurrency",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/go/false-secrets",
       "to": "/tools/pub/pubspec",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/libraries",
       "to": "/libraries",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/go/package-retraction",
       "to": "/tools/pub/publishing",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/language/analysis-options",
       "to": "/tools/analysis",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/language/effective-dart/style",
       "to": "/effective-dart/style",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/language/language-tour",
       "to": "/language",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/tutorials/server/get-started",
       "to": "/learn/tutorial",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/language/type-system",
       "to": "/language/type-system",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/tools/sdk/archive",
       "to": "/get-dart/archive",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/codelabs/iterables",
       "to": "/libraries/collections/iterables",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/tutorials/language/streams",
       "to": "/libraries/async/using-streams",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/libraries/library-tour",
       "to": "/libraries",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/language/sound-dart",
       "to": "/language/type-system",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/platforms",
       "to": "/overview",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/tutorials/server/httpserver",
       "to": "/server",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/tools/dart2native",
       "to": "/tools/dart-compile",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/codelabs/async-await",
       "to": "/libraries/async/async-await",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/language/spec",
       "to": "/resources/language/spec",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/language/effective-dart",
       "to": "/effective-dart",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/guides/language/effective-dart/design",
       "to": "/effective-dart/design",
       "statusCode": 301,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/server/c-interop",
       "to": "/interop/c-interop",
       "statusCode": 301,

@@ -3,6 +3,7 @@
   "totalRedirects": 1,
   "redirects": [
     {
+      "disabled": true,
       "from": "/",
       "to": "/en",
       "statusCode": 307,

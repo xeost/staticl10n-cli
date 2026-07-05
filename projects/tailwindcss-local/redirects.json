@@ -3,18 +3,21 @@
   "totalRedirects": 3,
   "redirects": [
     {
+      "disabled": false,
       "from": "/docs",
       "to": "/docs/installation/using-vite",
       "statusCode": 307,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/docs/installation",
       "to": "/docs/installation/using-vite",
       "statusCode": 307,
       "detectedDuring": "crawl"
     },
     {
+      "disabled": false,
       "from": "/docs/text-color",
       "to": "/docs/color",
       "statusCode": 307,

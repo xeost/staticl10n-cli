@@ -11,6 +11,7 @@ export interface DetectedRedirect {
   to: string;
   statusCode: number;
   detectedDuring: 'crawl';
+  disabled?: boolean;
 }
 
 export interface ManualRedirect {
@@ -18,6 +19,7 @@ export interface ManualRedirect {
   to: string;
   statusCode: number;
   description?: string;
+  disabled?: boolean;
 }
 
 export interface RedirectsFile {
@@ -49,7 +51,16 @@ export function loadRedirectsFile(slug: string): RedirectsFile {
   }
   try {
     const raw = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(raw) as RedirectsFile;
+    const parsed = JSON.parse(raw) as RedirectsFile;
+    parsed.redirects = (parsed.redirects || []).map((r) => ({
+      disabled: r.disabled !== undefined ? r.disabled : false,
+      ...r,
+    }));
+    parsed.manual = (parsed.manual || []).map((m) => ({
+      disabled: m.disabled !== undefined ? m.disabled : false,
+      ...m,
+    }));
+    return parsed;
   } catch {
     return {
       detectedAt: new Date().toISOString(),
@@ -64,6 +75,14 @@ export function loadRedirectsFile(slug: string): RedirectsFile {
 export function saveRedirectsFile(slug: string, data: RedirectsFile): void {
   const filePath = getRedirectsFilePath(slug);
   fs.ensureDirSync(path.dirname(filePath));
+  data.redirects = (data.redirects || []).map((r) => ({
+    disabled: r.disabled !== undefined ? r.disabled : false,
+    ...r,
+  }));
+  data.manual = (data.manual || []).map((m) => ({
+    disabled: m.disabled !== undefined ? m.disabled : false,
+    ...m,
+  }));
   data.totalRedirects = data.redirects.length + data.manual.length;
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
 }
@@ -71,6 +90,7 @@ export function saveRedirectsFile(slug: string, data: RedirectsFile): void {
 /**
  * Merges newly detected redirects into the persisted redirects.json.
  * Deduplicates by `from` path — last detection wins (handles re-crawls).
+ * Preserves the disabled status if a redirect is already present in the file.
  */
 export function mergeDetectedRedirects(slug: string, newRedirects: DetectedRedirect[]): void {
   if (newRedirects.length === 0) return;
@@ -78,7 +98,18 @@ export function mergeDetectedRedirects(slug: string, newRedirects: DetectedRedir
 
   const existing = new Map(data.redirects.map((r) => [r.from, r]));
   for (const r of newRedirects) {
-    existing.set(r.from, r);
+    const match = existing.get(r.from);
+    if (match) {
+      existing.set(r.from, {
+        ...r,
+        disabled: match.disabled ?? false,
+      });
+    } else {
+      existing.set(r.from, {
+        ...r,
+        disabled: false,
+      });
+    }
   }
 
   data.redirects = Array.from(existing.values());
@@ -89,13 +120,56 @@ export function mergeDetectedRedirects(slug: string, newRedirects: DetectedRedir
 // ─── _redirects File Generation ───────────────────────────────────────────────
 
 /**
+ * Detects if a redirect is conflicting with path rewrite rules.
+ * A conflict occurs if the rewritten source path is equal to the rewritten target path,
+ * or if the normalized target path rewrites to the rewritten source path.
+ */
+export function isConflictingRedirect(from: string, to: string, pathRewriteRules?: PathRewriteRule[]): boolean {
+  if (!pathRewriteRules || pathRewriteRules.length === 0) return false;
+
+  const normalize = (p: string) => {
+    let rewritten = rewritePath(p, pathRewriteRules);
+    if (rewritten.length > 1 && rewritten.endsWith('/')) {
+      rewritten = rewritten.slice(0, -1);
+    }
+    return rewritten;
+  };
+
+  const rewrittenFrom = normalize(from);
+  const rewrittenTo = normalize(to);
+
+  if (rewrittenFrom === rewrittenTo) {
+    return true;
+  }
+
+  const toWithSlash = to.endsWith('/') ? to : to + '/';
+  const rewrittenToWithSlash = normalize(toWithSlash);
+  if (rewrittenToWithSlash === rewrittenFrom) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Builds the plain-text content of a `_redirects` file.
  * Compatible with Cloudflare Pages and Netlify format:
  * one rule per line — "/from  /to  statusCode"
  */
 export function buildRedirectsContent(data: RedirectsFile, pathRewriteRules?: PathRewriteRule[]): string {
-  const allRedirects = [...data.redirects, ...data.manual];
-  const rewrittenRedirects = allRedirects.map((r) => {
+  const activeRedirects = [...data.redirects, ...data.manual].filter((r) => !r.disabled);
+  const disabledCount = [...data.redirects, ...data.manual].filter((r) => r.disabled).length;
+
+  const nonConflictingRedirects = activeRedirects.filter((r) => {
+    if (isConflictingRedirect(r.from, r.to, pathRewriteRules)) {
+      return false;
+    }
+    return true;
+  });
+
+  const conflictCount = activeRedirects.length - nonConflictingRedirects.length;
+
+  const rewrittenRedirects = nonConflictingRedirects.map((r) => {
     const rewrittenFrom = rewritePath(r.from, pathRewriteRules);
     const rewrittenTo = rewritePath(r.to, pathRewriteRules);
     return {
@@ -104,9 +178,10 @@ export function buildRedirectsContent(data: RedirectsFile, pathRewriteRules?: Pa
       to: rewrittenTo,
     };
   });
+
   const lines: string[] = [
     `# Generated automatically by staticl10n`,
-    `# Detected redirects: ${data.redirects.length} | Manual: ${data.manual.length}`,
+    `# Detected redirects: ${data.redirects.length} | Manual: ${data.manual.length}${disabledCount > 0 ? ` | Disabled: ${disabledCount}` : ''}${conflictCount > 0 ? ` | Conflicts skipped: ${conflictCount}` : ''}`,
     '',
     ...rewrittenRedirects.map((r) => `${r.from}  ${r.to}  ${r.statusCode}`),
   ];
