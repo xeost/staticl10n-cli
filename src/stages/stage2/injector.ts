@@ -1,5 +1,9 @@
 import * as cheerio from 'cheerio';
 import type { HtmlFragment, PlaceholderEntry } from './extractor.js';
+import type { ProjectConfig } from '../../core/config.js';
+import { META_SELECTORS } from './meta.js';
+
+
 
 // ─── Translation Injector ─────────────────────────────────────────────────────
 
@@ -85,6 +89,9 @@ export function injectTranslations(
 export function generateRuntimePatch(
   fragments: HtmlFragment[],
   translatedTexts: Map<string, string>,
+  translatedHtml?: string,
+  config?: ProjectConfig,
+  lang?: string,
 ): string {
   // Build fragment dictionary: { "f1": "<span>Translated</span> text" }
   const fragmentDict: Record<string, string> = {};
@@ -98,10 +105,7 @@ export function generateRuntimePatch(
       // Map original attribute value → translated value
       attributeDict[fragment.outerHtml] = translated;
     } else {
-      // Reconstruct full HTML (restoring img/svg/etc. from placeholders) before
-      // storing in the runtime patch dictionary. Without this, the MutationObserver
-      // would set innerHTML to placeholder text like "<1/>" which the browser
-      // renders as an empty unknown element, making images disappear.
+      // Reconstruct HTML from placeholders
       let inner: string;
       if (fragment.placeholders && fragment.placeholders.size > 0) {
         inner = reconstructFromPlaceholders(translated, fragment.placeholders);
@@ -111,6 +115,43 @@ export function generateRuntimePatch(
         inner = (firstChild.length > 0 ? firstChild.html() : $t('body').html()) ?? translated;
       }
       fragmentDict[fragment.id] = inner;
+    }
+  }
+
+  // Extract translated title and SEO meta tag values from the translated HTML
+  const metaDict: Record<string, string> = {};
+  if (translatedHtml) {
+    const $ = cheerio.load(translatedHtml);
+    const titleText = $('head > title').text().trim();
+    if (titleText) {
+      metaDict['title'] = titleText;
+    }
+    for (const item of META_SELECTORS) {
+      const el = $(item.selector);
+      if (el.length) {
+        const val = el.attr(item.attrName);
+        if (val) {
+          metaDict[item.selector] = val.trim();
+        }
+      }
+    }
+  }
+
+  // Collect active personalization rules for this language/page
+  const activeRules: any[] = [];
+  if (config && config.personalization) {
+    const preRules = config.personalization.preTranslation || [];
+    const postRules = config.personalization.postTranslation || [];
+
+    for (const rule of preRules) {
+      activeRules.push(rule);
+    }
+
+    for (const rule of postRules) {
+      if (lang && rule.languages && !rule.languages.includes(lang)) {
+        continue;
+      }
+      activeRules.push(rule);
     }
   }
 
@@ -124,6 +165,10 @@ export function generateRuntimePatch(
   var F = ${JSON.stringify(fragmentDict)};
 
   var A = ${JSON.stringify(attributeDict)};
+
+  var R = ${JSON.stringify(activeRules)};
+
+  var M = ${JSON.stringify(metaDict)};
 
   // Cached {el, id} pairs captured before React removes data-sl-id during hydration.
   // applyAll() uses these direct DOM references so it works even after the attribute is gone.
@@ -160,6 +205,118 @@ export function generateRuntimePatch(
     node.childNodes.forEach(walk);
   }
 
+  function applyRule(rule) {
+    try {
+      if (rule.type === 'remove_element') {
+        if (rule.selector) {
+          document.querySelectorAll(rule.selector).forEach(function(el) {
+            el.remove();
+          });
+        }
+      } else if (rule.type === 'remove_attribute') {
+        if (rule.selector && rule.attribute) {
+          document.querySelectorAll(rule.selector).forEach(function(el) {
+            el.removeAttribute(rule.attribute);
+          });
+        }
+      } else if (rule.type === 'replace_text') {
+        if (rule.search && rule.replace !== undefined) {
+          if (rule.selector) {
+            if (rule.selector === 'title' || rule.selector.indexOf('title') !== -1) {
+              if (rule.replace && document.title.indexOf(rule.replace) !== -1) {
+                // Already replaced
+              } else if (document.title.indexOf(rule.search) !== -1) {
+                document.title = document.title.split(rule.search).join(rule.replace);
+              }
+            }
+            document.querySelectorAll(rule.selector).forEach(function(el) {
+              var current = el.innerHTML || '';
+              if (rule.replace && current.indexOf(rule.replace) !== -1) {
+                return;
+              }
+              var updated = current.split(rule.search).join(rule.replace);
+              if (updated !== current) {
+                el.innerHTML = updated;
+              }
+            });
+          } else {
+            var current = document.body.innerHTML || '';
+            if (rule.replace && current.indexOf(rule.replace) !== -1) {
+              return;
+            }
+            var updated = current.split(rule.search).join(rule.replace);
+            if (updated !== current) {
+              document.body.innerHTML = updated;
+            }
+          }
+        }
+      } else if (rule.type === 'inject_html') {
+        if (rule.html) {
+          var pos = rule.position || 'body_end';
+          if (pos === 'head_end') {
+            var temp = document.createElement('div');
+            temp.innerHTML = rule.html;
+            while (temp.firstChild) {
+              document.head.appendChild(temp.firstChild);
+            }
+          } else if (pos === 'body_start') {
+            var temp = document.createElement('div');
+            temp.innerHTML = rule.html;
+            while (temp.lastChild) {
+              document.body.insertBefore(temp.lastChild, document.body.firstChild);
+            }
+          } else if (pos === 'body_end') {
+            var temp = document.createElement('div');
+            temp.innerHTML = rule.html;
+            while (temp.firstChild) {
+              document.body.appendChild(temp.firstChild);
+            }
+          } else if (pos.indexOf('after_selector:') === 0) {
+            var sel = pos.substring('after_selector:'.length);
+            document.querySelectorAll(sel).forEach(function(targetEl) {
+              var temp = document.createElement('div');
+              temp.innerHTML = rule.html;
+              while (temp.firstChild) {
+                targetEl.parentNode.insertBefore(temp.firstChild, targetEl.nextSibling);
+              }
+            });
+          }
+        }
+      } else if (rule.type === 'add_attribute') {
+        if (rule.selector && rule.attribute && rule.replace !== undefined) {
+          document.querySelectorAll(rule.selector).forEach(function(el) {
+            el.setAttribute(rule.attribute, rule.replace);
+          });
+        }
+      }
+    } catch (e) {
+      console.error('[staticl10n] Error applying personalization rule:', rule, e);
+    }
+  }
+
+  function applyAllRules() {
+    R.forEach(applyRule);
+  }
+
+  function applyMeta() {
+    if (M.title) {
+      if (document.title !== M.title) {
+        document.title = M.title;
+      }
+      var titleEl = document.querySelector('head > title');
+      if (titleEl && titleEl.innerHTML !== M.title) {
+        titleEl.innerHTML = M.title;
+      }
+    }
+    Object.keys(M).forEach(function(selector) {
+      if (selector === 'title') return;
+      var el = document.querySelector(selector);
+      if (el && el.getAttribute('content') !== M[selector]) {
+        el.setAttribute('content', M[selector]);
+      }
+    });
+  }
+
   // Re-applies all cached translations using stored element references.
   // Disconnects the observer first to prevent infinite mutation loops.
   function applyAll() {
@@ -168,7 +325,9 @@ export function generateRuntimePatch(
       if (e.el.isConnected && isSafeToReplace(e.el)) e.el.innerHTML = F[e.id];
     });
     document.querySelectorAll('[alt],[title],[placeholder],[aria-label],[aria-description]').forEach(translateAttributes);
-    observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    applyMeta();
+    applyAllRules();
+    observer.observe(document.documentElement, { childList: true, subtree: true });
   }
 
   function reveal() {
@@ -180,35 +339,11 @@ export function generateRuntimePatch(
   }
 
   function init() {
-    // IMPORTANT: do NOT call walk() here. walk() mutates the DOM (innerHTML/attributes)
-    // synchronously, and init() runs as soon as this deferred script executes — which
-    // can be before or during React's hydration pass. Mutating the DOM at that point
-    // races with hydration and triggers a hard hydration mismatch (React error #418),
-    // causing React to discard the whole subtree via a full client-side re-render
-    // (reverting to the original, untranslated JSX and wiping other DOM attributes).
-    // walk() is only safe to call from the MutationObserver below, for nodes added
-    // after hydration has already completed (e.g. client-side navigations).
-    // Cache element references NOW, before React hydration removes data-sl-id attributes.
     document.querySelectorAll('[data-sl-id]').forEach(function(el) {
       var id = el.getAttribute('data-sl-id');
       if (id && F[id] !== undefined) entries.push({ el: el, id: id });
     });
 
-    // Wait for React hydration to finish, then re-apply and reveal.
-    // IMPORTANT: applyAll() calls observer.observe() for the first time here, NOT at
-    // the top level. The observer must NOT run during React hydration — doing so would
-    // trigger applyAll() mid-hydration (setting innerHTML while React reconciles),
-    // which corrupts the fiber tree and breaks all event handlers (theme toggle, etc.).
-    //
-    // requestIdleCallback is NOT a reliable "hydration finished" signal: it fires as
-    // soon as the main thread is idle for a moment, which can happen WHILE React is
-    // still waiting on async chunks (e.g. Suspense boundaries / lazy client components)
-    // — i.e. well before hydration has actually completed. Applying translations at
-    // that point still races with hydration and reproduces the same #418 mismatch.
-    // Instead, detect quiescence: watch document.body for mutations (hydration causes
-    // a burst of DOM activity while it attaches listeners / commits lazy chunks) and
-    // only run afterHydration() once no mutation has been observed for SETTLE_MS.
-    // A maximum wait caps how long a pathological page can stay hidden.
     var SETTLE_MS = 300;
     var MAX_WAIT_MS = 4000;
     var settled = false;
@@ -228,8 +363,20 @@ export function generateRuntimePatch(
       settleTimer = setTimeout(afterHydration, SETTLE_MS);
     }
 
-    var preHydrationObserver = new MutationObserver(scheduleSettleCheck);
-    preHydrationObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
+    var preHydrationObserver = new MutationObserver(function(mutations) {
+      preHydrationObserver.disconnect();
+      // Run remove_element rules immediately on newly added elements to prevent analytics loading
+      R.forEach(function(rule) {
+        if (rule.type === 'remove_element' && rule.selector) {
+          document.querySelectorAll(rule.selector).forEach(function(el) {
+            el.remove();
+          });
+        }
+      });
+      preHydrationObserver.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+      scheduleSettleCheck();
+    });
+    preHydrationObserver.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
     scheduleSettleCheck();
     setTimeout(afterHydration, MAX_WAIT_MS);
   }
@@ -255,20 +402,26 @@ export function generateRuntimePatch(
           break;
         }
       }
+      if (!needsUpdate) {
+        var tag = t.tagName && t.tagName.toLowerCase();
+        if (tag === 'title' || tag === 'head' || t.parentNode === document.head) {
+          needsUpdate = true;
+        }
+      }
     }
     if (needsUpdate) {
       applyAll();
     } else {
+      observer.disconnect();
       for (var i = 0; i < mutations.length; i++) {
         mutations[i].addedNodes.forEach(function(n) {
           if (n.nodeType === Node.ELEMENT_NODE) walk(n);
         });
       }
+      applyAllRules();
+      observer.observe(document.documentElement, { childList: true, subtree: true });
     }
   });
-
-  // NOTE: observer.observe() is NOT called here. It is first started inside
-  // afterHydration() → applyAll() after React's hydration is complete.
 
 })();
 `;

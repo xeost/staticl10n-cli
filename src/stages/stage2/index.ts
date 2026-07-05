@@ -209,7 +209,7 @@ export async function translateProject(
         // For sites that need the runtime patch (e.g. Next.js), generate translations.js
         if (needsPatch) {
           translatedHtml = injectRuntimePatchReferences(translatedHtml);
-          const patchContent = generateRuntimePatch(fragments, translatedTexts);
+          const patchContent = generateRuntimePatch(fragments, translatedTexts, translatedHtml, config, lang);
           const patchPath = path.join(outputDir, path.dirname(outputPath), 'translations.js');
           fs.ensureDirSync(path.dirname(patchPath));
           fs.writeFileSync(patchPath, patchContent, 'utf-8');

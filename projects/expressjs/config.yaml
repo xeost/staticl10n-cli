@@ -191,11 +191,23 @@ translation:
 personalization:
   # Rules applied at the end of Stage 1, BEFORE translation
   # Use to remove analytics, tracking scripts, cookie banners, ads, etc.
-  preTranslation: []
+  preTranslation:
+    - type: remove_element
+      selector: "script[src*='static.cloudflareinsights.com']"
+      description: Remove Cloudflare Web Analytics
+    - type: remove_element
+      selector: "div[data-language-select='true']"
+      description: Remove language selector
   # Rules applied AFTER translation (applied automatically during translation/build for both AI and manual modes)
   # Use to inject banners, replace copyright text, rename page titles, etc.
   # Add "languages: [es, fr]" to a rule to restrict it to specific language outputs.
-  postTranslation: []
+  postTranslation:
+    - type: replace_text
+      selector: "head > title"
+      search: Express.js
+      replace: Express.js en Español
+      languages: ["es"]
+      description: Rename page titles for the Spanish translation
 
 # How to handle static assets (CSS, JS, images, fonts): "copy" (default) or "symlink"
 copyAssetsMode: copy
@@ -203,7 +215,9 @@ copyAssetsMode: copy
 # Optional: regex rules to rewrite URL pathnames at output time (output files, links, sitemap, hreflang).
 # Useful when crawling a language-prefixed site (e.g. /en/…) but publishing without the prefix.
 # Example: { pattern: "^/en/", replacement: "/" } → /en/getting-started/ becomes /getting-started/
-pathRewrite: []
+pathRewrite:
+  - pattern: "^/en/"
+    replacement: "/"
 
 # Optional: map sibling-project domains to their translated equivalents (per language).
 # Links in translated HTML pointing to a mapped domain are rewritten to the target language URL.
