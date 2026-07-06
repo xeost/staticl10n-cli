@@ -116,7 +116,7 @@
   - Express
   - Categoría: Frameworks y APIs (Backend)
   - Ya tiene traducción: la documentación sí pero la referencia y el blog no
-  - Traducido: EN PROCESO
+  - Traducido: SI
 
 - SQLite
   - Motor de base de datos SQL escrito en C, altamente confiable, integrado y que no requiere configuración.

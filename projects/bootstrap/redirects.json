@@ -1,0 +1,119 @@
+{
+  "detectedAt": "2026-07-06T03:58:27.479Z",
+  "totalRedirects": 16,
+  "redirects": [
+    {
+      "disabled": false,
+      "from": "/docs/5.2",
+      "to": "/docs/5.2/getting-started/introduction",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.1",
+      "to": "/docs/5.1/getting-started/introduction",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.0",
+      "to": "/docs/5.0/getting-started/introduction",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.3",
+      "to": "/docs/5.3/getting-started/introduction",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.3/getting-started",
+      "to": "/docs/5.3/getting-started/introduction",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.2/getting-started",
+      "to": "/docs/5.2/getting-started/introduction",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.1/getting-started",
+      "to": "/docs/5.1/getting-started/introduction",
+      "statusCode": 307,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.0/getting-started",
+      "to": "/docs/5.0/getting-started/introduction",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.2/components",
+      "to": "/docs/5.2/components/accordion",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.1/components",
+      "to": "/docs/5.1/components/accordion",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.0/components",
+      "to": "/docs/5.0/components/accordion",
+      "statusCode": 307,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.2/layout",
+      "to": "/docs/5.2/layout/breakpoints",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.1/layout",
+      "to": "/docs/5.1/layout/breakpoints",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.2/getting-started/build-tools",
+      "to": "/docs/5.2/getting-started/contribute",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.1/getting-started/build-tools",
+      "to": "/docs/5.1/getting-started/contribute",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/docs/5.0/layout",
+      "to": "/docs/5.0/layout/breakpoints",
+      "statusCode": 307,
+      "detectedDuring": "crawl"
+    }
+  ],
+  "manual": []
+}
