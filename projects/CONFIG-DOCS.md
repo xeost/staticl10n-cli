@@ -322,6 +322,116 @@ With this configuration, a link like `<a href="https://docs.astro.build/en/getti
 
 ---
 
+## Internal linking / affiliate conversion links
+
+The `internalLinking` section implements the strategy described in `design/estrategia-de-enlazado-interno.md`. It has three parts:
+
+1. **`brandFooterHtml`** — §1 *Domain Authority*: a structural, non-commercial HTML fragment injected right before `</body>` on **every** page of the site (all directories, all languages). Independent of `links`.
+2. **`defaultLinkTemplate`** — default HTML template used by any link in `links` that doesn't define its own `htmlTemplate`.
+3. **`links`** — §2–§5: a list of affiliate/conversion link placements, each injecting a styled HTML fragment (not just a bare `<a>` tag) into a specific page at a specific CSS selector.
+
+Conversion articles are **not** hardcoded per project. They are defined once in the centralized registry `data/conversion-articles.yaml` and referenced by `articleId`:
+
+```yaml
+# data/conversion-articles.yaml
+articles:
+  - id: mejor-hosting
+    url: "https://esdocu.com/mejor-hosting"
+    title: "Mejor Hosting"
+    topics: [hosting, servidores, deployment]
+```
+
+### HTML templates and placeholders
+
+Both `defaultLinkTemplate` and per-link `htmlTemplate` support three placeholders, replaced at injection time:
+
+| Placeholder | Replaced with |
+| --- | --- |
+| `{{url}}` | The conversion article's URL (from `data/conversion-articles.yaml`). |
+| `{{anchorText}}` | The rule's `anchorText` value. |
+| `{{title}}` | The conversion article's `title` (from `data/conversion-articles.yaml`). |
+
+If a link doesn't set `htmlTemplate` and `defaultLinkTemplate` is also unset, the fallback is a plain `<a href="{{url}}" rel="sponsored noopener">{{anchorText}}</a>`.
+
+### Project config.yaml example
+
+```yaml
+internalLinking:
+  # §1 — Injected before </body> on EVERY page (all languages, including original/).
+  brandFooterHtml: |
+    <div class="text-center text-muted small py-3 border-top">
+      Traducción mantenida por <a href="https://esdocu.com" rel="noopener">Esdocu</a>
+    </div>
+
+  # Default styled template for links below that don't set their own htmlTemplate.
+  defaultLinkTemplate: |
+    <div class="alert alert-light border my-4" role="note">
+      💡 Si estás en este punto, quizás te interese <a href="{{url}}" rel="sponsored noopener">{{anchorText}}</a>.
+    </div>
+
+  links:
+    - articleId: mejor-hosting       # must match an id in data/conversion-articles.yaml
+      placement: home                # "home" (max 1/subdomain) or "internal" (3-5/subdomain)
+      page: "/"                      # page pathname this rule targets
+      selector: "main"               # CSS anchor point
+      position: "body_end"           # optional: head_end | body_start | body_end | after_selector:<css> (default: after_selector:<selector>)
+      anchorText: "proveedores de infraestructura recomendados"  # must be unique within the project
+      languages: ["es"]              # optional: restrict to specific output languages
+      description: "Home — Recursos Recomendados"
+
+    # This rule overrides the default template with a custom card matching the site's design.
+    - articleId: mejor-hosting
+      placement: internal
+      page: "/docs/5.3/getting-started/download/"
+      selector: "h2#cdn-via-jsdelivr"
+      anchorText: "revisa estas opciones de servidores para producción"
+      htmlTemplate: |
+        <div class="card border-primary my-4">
+          <div class="card-body">
+            <p class="card-text mb-0">🚀 Antes de desplegar, <a href="{{url}}" class="card-link" rel="sponsored noopener">{{anchorText}}</a>.</p>
+          </div>
+        </div>
+      languages: ["es"]
+      description: "Download page — hosting mention"
+```
+
+### Field reference
+
+**`internalLinking` (top-level):**
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `brandFooterHtml` | no | HTML fragment injected before `</body>` on every page (§1 Domain Authority). |
+| `defaultLinkTemplate` | no | Default HTML template for links without their own `htmlTemplate`. Supports `{{url}}`, `{{anchorText}}`, `{{title}}`. |
+| `links` | no | Array of `ConversionLinkRule` entries (see below). |
+
+**`ConversionLinkRule` (each entry in `links`):**
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `articleId` | yes | ID of the conversion article, resolved against `data/conversion-articles.yaml`. |
+| `placement` | yes | `"home"` (max 1 per subdomain) or `"internal"` (3 to 5 per subdomain). |
+| `page` | yes | Page pathname the rule applies to (e.g. `"/docs/5.3/getting-started/download/"`). |
+| `selector` | yes | CSS selector used as the anchor point for injection. |
+| `position` | no | Injection position. Defaults to `after_selector:<selector>`. |
+| `anchorText` | yes | Organic anchor text. Must not repeat within the same project. |
+| `htmlTemplate` | no | Per-rule HTML template overriding `defaultLinkTemplate`. Supports `{{url}}`, `{{anchorText}}`, `{{title}}`. |
+| `languages` | no | Restrict to specific output language directories. Omit to apply to all, including `original/`. |
+| `description` | no | Free-text note for maintainers. |
+
+### Audit script
+
+Run `pnpm audit:internal-linking` to scan every project's `internalLinking` section, validate all the quotas and rules from the strategy document, and update the centralized usage registry at `data/internal-linking-registry.yaml`. The script:
+
+- Validates link quotas (home ≤ 1, internal 3–5, total 4–6 per subdomain).
+- Checks anchor text uniqueness within each project.
+- Resolves every `articleId` against `data/conversion-articles.yaml`.
+- Warns about projects missing `brandFooterHtml` (§1 Domain Authority, non-blocking).
+- Warns about footprint risks (same `articleId` + `anchorText` reused across projects).
+- Exits with a non-zero status if any project violates the strategy.
+
+---
+
 ## Personalization rule types
 
 | Type | Required fields | Optional fields | Description |

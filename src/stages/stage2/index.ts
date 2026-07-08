@@ -24,6 +24,7 @@ import { generateSitemap } from './sitemap.js';
 import { translateCodeComments, translateFragments, translateJsonLdValues } from './translator.js';
 import { applyPreTranslationInMemory, applyRule } from '../stage1/personalizer.js';
 import { writeRedirectsTo } from '../stage1/redirects.js';
+import { applyBrandFooter, applyInternalLinkingRules } from '../stage3/internalLinking.js';
 
 // ─── Stage 2 Orchestrator ─────────────────────────────────────────────────────
 
@@ -217,7 +218,10 @@ export async function translateProject(
 
         // Apply postTranslation personalization rules
         const postRules = config.personalization.postTranslation;
-        if (postRules.length > 0) {
+        const conversionLinks = config.internalLinking?.links ?? [];
+        const defaultLinkTemplate = config.internalLinking?.defaultLinkTemplate;
+        const brandFooterHtml = config.internalLinking?.brandFooterHtml;
+        if (postRules.length > 0 || conversionLinks.length > 0 || brandFooterHtml) {
           const $rules = cheerio.load(translatedHtml);
           let modified = false;
           for (const rule of postRules) {
@@ -226,6 +230,14 @@ export async function translateProject(
             if (count > 0) {
               modified = true;
             }
+          }
+          if (conversionLinks.length > 0) {
+            const pagePathname = new URL(pageRow.url).pathname;
+            const linkCount = applyInternalLinkingRules($rules, conversionLinks, pagePathname, lang, defaultLinkTemplate);
+            if (linkCount > 0) modified = true;
+          }
+          if (applyBrandFooter($rules, brandFooterHtml)) {
+            modified = true;
           }
           if (modified) {
             translatedHtml = $rules.html();
@@ -341,6 +353,9 @@ export async function reapplyPostProcessing(
 
   const languages = targetLanguages ?? config.translation.targetLanguages;
   const postRules = config.personalization.postTranslation;
+  const conversionLinks = config.internalLinking?.links ?? [];
+  const defaultLinkTemplate = config.internalLinking?.defaultLinkTemplate;
+  const brandFooterHtml = config.internalLinking?.brandFooterHtml;
 
   let pagesProcessed = 0;
   let pagesFailed = 0;
@@ -404,13 +419,17 @@ export async function reapplyPostProcessing(
         html = $meta.html();
 
         // Re-apply postTranslation personalization rules
-        if (postRules.length > 0) {
+        if (postRules.length > 0 || conversionLinks.length > 0 || brandFooterHtml) {
           const $rules = cheerio.load(html);
           for (const rule of postRules) {
             // Skip rules restricted to other languages
             if (rule.languages && !rule.languages.includes(lang)) continue;
             applyRule($rules, rule);
           }
+          if (conversionLinks.length > 0) {
+            applyInternalLinkingRules($rules, conversionLinks, pagePath, lang, defaultLinkTemplate);
+          }
+          applyBrandFooter($rules, brandFooterHtml);
           html = $rules.html();
         }
 

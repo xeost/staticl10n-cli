@@ -26,6 +26,51 @@ export interface PersonalizationRule {
   languages?: string[];
 }
 
+/**
+ * A single internal/affiliate link placement, part of the internal-linking
+ * strategy described in design/estrategia-de-enlazado-interno.md.
+ *
+ * Links are resolved against the centralized registry in
+ * data/conversion-articles.yaml via `articleId` — the raw URL is never
+ * hardcoded in a project's config.yaml.
+ */
+export interface ConversionLinkRule {
+  /** ID of the conversion article, as defined in data/conversion-articles.yaml. */
+  articleId: string;
+  /**
+   * 'home': structural placement on the home page (max 1 per subdomain).
+   * 'internal': surgical placement in internal pages (3 to 5 per subdomain, total 4-6 including home).
+   */
+  placement: 'home' | 'internal';
+  /**
+   * Page path the rule applies to (must match the crawled page's pathname, e.g. "/docs/5.3/getting-started/download/").
+   * Required for placement: 'internal'. For placement: 'home' this is typically "/".
+   */
+  page: string;
+  /** CSS selector used as the anchor point for the injected link. */
+  selector: string;
+  /** Where to inject relative to `selector`. Defaults to `after_selector:<selector>`. */
+  position?: 'head_end' | 'body_start' | 'body_end' | `after_selector:${string}`;
+  /**
+   * Organic anchor text for this link. Per the strategy, anchor text must NOT
+   * repeat across different links within the same project (see §3, "Variación de Textos Ancla").
+   */
+  anchorText: string;
+  /**
+   * Optional HTML template for the injected fragment (e.g. a styled callout/card that matches
+   * the site's design, wrapping an organic sentence around the link). Supports the placeholders
+   * `{{url}}` (the conversion article's URL), `{{anchorText}}`, and `{{title}}` (the article's
+   * title from data/conversion-articles.yaml).
+   *
+   * Falls back to `internalLinking.defaultLinkTemplate` if omitted, and finally to a plain
+   * `<a href="{{url}}">{{anchorText}}</a>` if neither is set.
+   */
+  htmlTemplate?: string;
+  /** Restrict this rule to specific language output directories (e.g. ["es"]). Omit to apply to all, including original/. */
+  languages?: string[];
+  description?: string;
+}
+
 export interface PathRewriteRule {
   /** A regular-expression pattern matched against the URL pathname (e.g. \"^/en/\"). */
   pattern: string;
@@ -129,6 +174,28 @@ export interface ProjectConfig {
       }
     >
   >;
+  /**
+   * Optional internal-linking / affiliate-conversion configuration for this project (subdomain).
+   * See design/estrategia-de-enlazado-interno.md for the full strategy and
+   * data/conversion-articles.yaml for the centralized article registry.
+   * Applied as part of postTranslation personalization (see `applyPostPersonalization`).
+   */
+  internalLinking?: {
+    /**
+     * Structural, non-commercial HTML fragment injected right before `</body>` on
+     * EVERY page of the site (original/ and every language directory), independent
+     * of `links`. Implements §1 "Arquitectura de Autoridad de Marca (Domain Authority)"
+     * — e.g. a discreet footer link back to the main esdocu.com domain.
+     */
+    brandFooterHtml?: string;
+    /**
+     * Default HTML template applied to every link in `links` that doesn't define its
+     * own `htmlTemplate`. Supports the same `{{url}}`, `{{anchorText}}`, `{{title}}`
+     * placeholders as `ConversionLinkRule.htmlTemplate`.
+     */
+    defaultLinkTemplate?: string;
+    links: ConversionLinkRule[];
+  };
 }
 
 const PROJECTS_DIR = path.join(process.cwd(), 'projects');
@@ -246,6 +313,24 @@ function yamlDomainMap(
   return lines.join('\n');
 }
 
+/** Serializes internalLinking.links as an indented YAML block. */
+function yamlConversionLinks(links: ConversionLinkRule[], indent: string): string {
+  if (links.length === 0) return '[]';
+  const lines: string[] = [''];
+  for (const link of links) {
+    lines.push(`${indent}- articleId: ${yamlStr(link.articleId)}`);
+    lines.push(`${indent}  placement: ${link.placement}`);
+    lines.push(`${indent}  page: ${yamlStr(link.page)}`);
+    lines.push(`${indent}  selector: ${yamlStr(link.selector)}`);
+    if (link.position !== undefined) lines.push(`${indent}  position: ${yamlStr(link.position)}`);
+    lines.push(`${indent}  anchorText: ${yamlStr(link.anchorText)}`);
+    if (link.htmlTemplate !== undefined) lines.push(`${indent}  htmlTemplate: ${yamlStr(link.htmlTemplate)}`);
+    if (link.languages !== undefined) lines.push(`${indent}  languages: ${yamlInlineList(link.languages)}`);
+    if (link.description !== undefined) lines.push(`${indent}  description: ${yamlStr(link.description)}`);
+  }
+  return lines.join('\n');
+}
+
 /** Serializes pathRewrite rules as an indented YAML block. */
 function yamlPathRewrite(rules: PathRewriteRule[], indent: string): string {
   if (!rules || rules.length === 0) return '[]';
@@ -289,6 +374,7 @@ function buildAnnotatedYaml(config: ProjectConfig): string {
 
   const domainMap = config.domainMap ?? {};
   const pathRewrite = config.pathRewrite ?? [];
+  const internalLinks = config.internalLinking?.links ?? [];
 
   const ollamaUrlLine = t.provider === 'ollama'
     ? `  # Base URL of the local Ollama server (only used when provider is "ollama")
@@ -386,6 +472,18 @@ pathRewrite: ${yamlPathRewrite(pathRewrite, '  ')}
 # Links in translated HTML pointing to a mapped domain are rewritten to the target language URL.
 # Example: links to https://docs.astro.build become https://astro-docs.esdocu.com in Spanish output.
 domainMap: ${yamlDomainMap(domainMap, '  ')}
+
+# Optional: internal-linking / affiliate-conversion configuration, per design/estrategia-de-enlazado-interno.md.
+internalLinking:
+  # Structural, non-commercial fragment injected right before </body> on EVERY page (§1: Domain Authority).
+  # Independent of "links" below — e.g. a discreet footer link back to the main domain.
+  brandFooterHtml: ${yamlStr(config.internalLinking?.brandFooterHtml ?? '')}
+  # Default HTML template used by any link below that omits its own "htmlTemplate".
+  # Supports {{url}}, {{anchorText}}, and {{title}} placeholders.
+  defaultLinkTemplate: ${yamlStr(config.internalLinking?.defaultLinkTemplate ?? '')}
+  # Each entry references a centralized article by "articleId" (see data/conversion-articles.yaml)
+  # instead of hardcoding a raw URL. Run "pnpm audit:internal-linking" to validate and track usage.
+  links: ${yamlConversionLinks(internalLinks, '    ')}
 `;
 }
 
@@ -456,5 +554,6 @@ export function buildDefaultConfig(opts: {
     copyAssetsMode: 'copy',
     pathRewrite: [],
     domainMap: {},
+    internalLinking: { links: [] },
   };
 }

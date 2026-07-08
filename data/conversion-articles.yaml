@@ -1,0 +1,26 @@
+# Centralized registry of "conversion articles" (affiliate/monetization articles
+# published on the main esdocu.com domain).
+#
+# Every internal-linking rule defined in a project's config.yaml (under
+# `internalLinking.links`) must reference one of the `id` values below via its
+# `articleId` field, instead of hardcoding the raw URL. This keeps a single
+# source of truth for conversion URLs and lets `src/scripts/audit-internal-linking.ts`
+# track and validate usage across all projects.
+#
+# See design/estrategia-de-enlazado-interno.md for the full linking strategy.
+articles:
+  - id: mejor-hosting
+    url: "https://esdocu.com/mejor-hosting"
+    title: "Mejor Hosting"
+    # Topics used purely as documentation/reference for editors — not read by the script.
+    topics: [hosting, servidores, deployment, despliegue, produccion]
+
+  - id: mejor-vpn
+    url: "https://esdocu.com/mejor-vpn"
+    title: "Mejor VPN"
+    topics: [seguridad, vpn, cifrado, redes, privacidad]
+
+  - id: mejor-base-de-datos-cloud
+    url: "https://esdocu.com/mejor-base-de-datos-en-la-nube"
+    title: "Mejor Base de Datos en la Nube"
+    topics: [bases de datos, database, cloud, almacenamiento]

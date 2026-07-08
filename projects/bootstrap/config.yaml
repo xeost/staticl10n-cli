@@ -197,3 +197,65 @@ pathRewrite: []
 # Links in translated HTML pointing to a mapped domain are rewritten to the target language URL.
 # Example: links to https://docs.astro.build become https://astro-docs.esdocu.com in Spanish output.
 domainMap: {}
+
+# Internal-linking / affiliate-conversion configuration, per design/estrategia-de-enlazado-interno.md.
+# Run "pnpm audit:internal-linking" to validate quotas and anchor-text uniqueness, and to
+# update the centralized usage registry at data/internal-linking-registry.yaml.
+internalLinking:
+  # §1 — Arquitectura de Autoridad de Marca (Domain Authority): structural, non-commercial
+  # fragment injected right before </body> on EVERY page of the site. Independent of "links" below.
+  brandFooterHtml: |
+    <div class="text-center text-muted small py-3 border-top">
+      Traducción mantenida por <strong>Esdocu</strong>. Visita <a href="https://esdocu.com" rel="noopener">esdocu.com</a> para ver más documentaciones traducidas.
+    </div>
+
+  # Default styled template used by any rule below that doesn't set its own "htmlTemplate".
+  # Placeholders: {{url}}, {{anchorText}}, {{title}} (article title from data/conversion-articles.yaml).
+  defaultLinkTemplate: |
+    <div class="alert alert-light border my-4" role="note">
+      💡 Si estás en este punto, quizás te interese <a href="{{url}}" rel="sponsored noopener">{{anchorText}}</a>.
+    </div>
+
+  links:
+    # Home page: max 1 link (§2 — "Home Page: 1 Enlace").
+    # Injected right after the "Lee la documentación de instalación" link paragraph.
+    - articleId: mejor-hosting
+      placement: home
+      page: "/"
+      selector: 'p:has(a[data-sl-id="f34"])'
+      anchorText: "mejor web hosting"
+      htmlTemplate: |
+        <div class="card border-primary mt-5">
+          <div class="card-body">
+            <h5 class="card-title">¿Estás comenzando un proyecto con Bootstrap?</h5>
+            <p class="card-text mb-0">Para aprovechar al máximo las maravillas de Bootstrap necesitarás el <a href="{{url}}" rel="sponsored noopener">{{anchorText}}</a>.</p>
+          </div>
+        </div>
+      languages: ["es"]
+      description: "Home — Recursos Recomendados"
+
+    # Internal pages: 3 to 5 links, surgically placed in relevant technical chapters (§3).
+    # This rule overrides the default template with a custom card matching Bootstrap's own style.
+    - articleId: mejor-hosting
+      placement: internal
+      page: "/docs/5.3/getting-started/download/"
+      selector: "h2#cdn-via-jsdelivr"
+      anchorText: "revisa estas opciones de servidores para producción"
+      htmlTemplate: |
+        <div class="card border-primary my-4">
+          <div class="card-body">
+            <p class="card-text mb-0">
+              🚀 Antes de desplegar, <a href="{{url}}" class="card-link" rel="sponsored noopener">{{anchorText}}</a>.
+            </p>
+          </div>
+        </div>
+      languages: ["es"]
+      description: "Getting started / Download — hosting mention"
+
+    # - articleId: mejor-hosting
+    #   placement: internal
+    #   page: "/docs/5.3/getting-started/webpack/"
+    #   selector: "h2#add-bootstrap"
+    #   anchorText: "dónde alojar tu build de producción"
+    #   languages: ["es"]
+    #   description: "Webpack guide — deployment context"

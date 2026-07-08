@@ -5,6 +5,7 @@ import type { PersonalizationRule, ProjectConfig } from '../../core/config.js';
 import { dbGetPagesByProject, dbGetProjectBySlug } from '../../core/db.js';
 import { logger } from '../../utils/logger.js';
 import { applyRule } from '../stage1/personalizer.js';
+import { applyBrandFooter, applyInternalLinkingRules } from './internalLinking.js';
 
 // ─── Post-Personalization Rules ───────────────────────────────────────────────
 
@@ -28,7 +29,10 @@ export async function applyPostPersonalization(
   if (!project) throw new Error(`Project "${projectSlug}" not found`);
 
   const rules = config.personalization.postTranslation;
-  if (rules.length === 0) {
+  const conversionLinks = config.internalLinking?.links ?? [];
+  const defaultLinkTemplate = config.internalLinking?.defaultLinkTemplate;
+  const brandFooterHtml = config.internalLinking?.brandFooterHtml;
+  if (rules.length === 0 && conversionLinks.length === 0 && !brandFooterHtml) {
     logger.info('No post-translation personalization rules configured.');
     return { directoriesProcessed: [], pagesProcessed: 0, affectedByRule: {} };
   }
@@ -37,6 +41,8 @@ export async function applyPostPersonalization(
   for (const rule of rules) {
     affectedByRule[rule.description ?? rule.type] = 0;
   }
+  if (conversionLinks.length > 0) affectedByRule['internalLinking'] = 0;
+  if (brandFooterHtml) affectedByRule['brandFooter'] = 0;
 
   // Collect all directories: original + each language
   const directories = [
@@ -74,6 +80,20 @@ export async function applyPostPersonalization(
           affectedByRule[key] = (affectedByRule[key] ?? 0) + count;
           modified = true;
         }
+      }
+
+      if (conversionLinks.length > 0) {
+        const pagePathname = new URL(pageRow.url).pathname;
+        const linkCount = applyInternalLinkingRules($, conversionLinks, pagePathname, label, defaultLinkTemplate);
+        if (linkCount > 0) {
+          affectedByRule['internalLinking'] = (affectedByRule['internalLinking'] ?? 0) + linkCount;
+          modified = true;
+        }
+      }
+
+      if (applyBrandFooter($, brandFooterHtml)) {
+        affectedByRule['brandFooter'] = (affectedByRule['brandFooter'] ?? 0) + 1;
+        modified = true;
       }
 
       if (modified && !dryRun) {

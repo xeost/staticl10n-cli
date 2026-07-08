@@ -10,6 +10,7 @@
     "dev": "tsx src/cli/index.ts",
     "build": "tsc",
     "start": "node dist/cli/index.js",
+    "audit:internal-linking": "tsx src/scripts/audit-internal-linking.ts",
     "preview:tailwindcss-local:original": "npx wrangler pages dev temp-public-static/tailwindcss-local/original",
     "preview:tailwindcss-local:es": "npx wrangler pages dev temp-public-static/tailwindcss-local/es --port 8789",
     "preview:bootstrap-local:original": "npx wrangler pages dev temp-public-static/bootstrap-local/original --port 9002",
