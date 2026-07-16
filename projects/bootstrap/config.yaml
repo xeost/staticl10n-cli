@@ -235,6 +235,21 @@ internalLinking:
   links:
     # Home page: max 1 link (§2 — "Home Page: 1 Enlace").
     # Injected right after the "Lee la documentación de instalación" link paragraph.
+    - articleId: cuanto-cuesta-pagina-web
+      placement: home
+      page: "/"
+      selector: 'p:has(a[data-sl-id="f34"])'
+      anchorText: "cuánto cuesta hacer una página web"
+      htmlTemplate: |
+        <div class="card border-primary mt-5">
+          <div class="card-body">
+            <h5 class="card-title">¿Planeas construir tu sitio con Bootstrap?</h5>
+            <p class="card-text mb-0">Bootstrap te permite diseñar todo tipo de proyectos, pero ¿sabes <a href="{{url}}" rel="sponsored noopener" target="_blank">{{anchorText}}</a>? Conoce los costos y presupuestos detallados.</p>
+          </div>
+        </div>
+      languages: ["es"]
+      description: "Home — Web page cost recommendation"
+
     - articleId: mejor-hosting
       placement: home
       page: "/"
@@ -244,7 +259,7 @@ internalLinking:
         <div class="card border-primary mt-5">
           <div class="card-body">
             <h5 class="card-title">¿Estás comenzando un proyecto con Bootstrap?</h5>
-            <p class="card-text mb-0">Para aprovechar al máximo las maravillas de Bootstrap necesitarás el <a href="{{url}}" rel="sponsored noopener">{{anchorText}}</a>.</p>
+            <p class="card-text mb-0">Para aprovechar al máximo las maravillas de Bootstrap necesitarás el <a href="{{url}}" target="_blank" rel="sponsored noopener">{{anchorText}}</a>.</p>
           </div>
         </div>
       languages: ["es"]

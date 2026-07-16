@@ -11,16 +11,31 @@
 articles:
   - id: mejor-hosting
     url: "https://esdocu.com/mejor-hosting"
-    title: "Mejor Hosting"
+    title: "El Mejor Hosting en 2026"
     # Topics used purely as documentation/reference for editors — not read by the script.
-    topics: [hosting, servidores, deployment, despliegue, produccion]
+    topics: [hosting, servidores, deployment, despliegue, produccion, alojamiento, web]
 
   - id: mejor-vpn
     url: "https://esdocu.com/mejor-vpn"
-    title: "Mejor VPN"
-    topics: [seguridad, vpn, cifrado, redes, privacidad]
+    title: "La Mejor VPN en 2026"
+    topics: [seguridad, vpn, cifrado, redes, privacidad, streaming, proteccion]
 
-  - id: mejor-base-de-datos-cloud
-    url: "https://esdocu.com/mejor-base-de-datos-en-la-nube"
-    title: "Mejor Base de Datos en la Nube"
-    topics: [bases de datos, database, cloud, almacenamiento]
+  - id: mejor-vps
+    url: "https://esdocu.com/mejor-vps"
+    title: "El Mejor VPS en 2026"
+    topics: [vps, servidores, cloud, virtualizacion, infraestructura, linux, backend]
+
+  - id: mejor-hosting-wordpress
+    url: "https://esdocu.com/mejor-hosting-wordpress"
+    title: "El Mejor Hosting para WordPress en 2026"
+    topics: [wordpress, hosting, cms, blogs, litespeed, sitio-web, php]
+
+  - id: cuanto-cuesta-pagina-web
+    url: "https://esdocu.com/cuanto-cuesta-pagina-web"
+    title: "¿Cuánto Cuesta Hacer una Página Web en 2026?"
+    topics: [desarrollo-web, presupuesto, diseno, freelance, precios, sitio-web, landing]
+
+  - id: cuanto-cuesta-una-app
+    url: "https://esdocu.com/cuanto-cuesta-una-app"
+    title: "¿Cuánto Cuesta Hacer una App en 2026?"
+    topics: [apps, flutter, desarrollo-movil, freelance, precios, android, ios]
