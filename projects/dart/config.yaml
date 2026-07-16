@@ -112,11 +112,77 @@ translation:
 personalization:
   # Rules applied at the end of Stage 1, BEFORE translation
   # Use to remove analytics, tracking scripts, cookie banners, ads, etc.
-  preTranslation: []
+  preTranslation:
+    # The cookie notice relies on Dart WASM component hydration to register its
+    # click handler. If the Dart component decides the notice is already dismissed
+    # (because localStorage["cookie-consent"] was set in a prior session), it skips
+    # hydration and the static HTML's class="show" becomes unresponsive.
+    # This script acts as a standalone fallback: it uses the same localStorage key
+    # Dart uses, hides the notice on page load if already accepted, and registers
+    # its own click handler so the button always works regardless of Dart state.
+    - type: inject_html
+      position: head_end
+      html: |
+        <script>
+        (function() {
+          var CONSENT_KEY = 'cookie-consent';
+          var NOTICE_ID = 'cookie-notice';
+          var DISMISS_DAYS = 180;
+          function isDismissed() {
+            try {
+              var v = window.localStorage.getItem(CONSENT_KEY);
+              if (!v) return false;
+              var ts = Number(v);
+              if (!ts) return false;
+              return (Date.now() - ts) < DISMISS_DAYS * 86400 * 1000;
+            } catch (e) { return false; }
+          }
+          function dismiss(el) {
+            try { window.localStorage.setItem(CONSENT_KEY, String(Date.now())); } catch (e) {}
+            el.classList.remove('show');
+          }
+          function init() {
+            var notice = document.getElementById(NOTICE_ID);
+            if (!notice) return;
+            if (isDismissed()) { notice.classList.remove('show'); return; }
+            var btn = notice.querySelector('button.filled-button');
+            if (btn) btn.addEventListener('click', function() { dismiss(notice); });
+          }
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+          } else {
+            init();
+          }
+        })();
+        </script>
+    - type: remove_element
+      selector: 'script[src*="googletagmanager.com"]'
+      description: Remove Google Tag Manager external scripts
+    - type: remove_element
+      selector: 'script[src*="google-analytics.com"]'
+      description: Remove Google Analytics external scripts
+    - type: remove_element
+      selector: 'script:contains("window.dataLayer")'
+      description: Remove dataLayer inline script
+    - type: remove_element
+      selector: 'script:contains("gtm.js")'
+      description: Remove GTM inline script
+    - type: remove_element
+      selector: 'script:contains("GoogleAnalyticsObject")'
+      description: Remove UA inline script
+    - type: remove_element
+      selector: 'noscript:contains("googletagmanager.com")'
+      description: Remove GTM noscript fallback iframe
   # Rules applied AFTER translation (applied automatically during translation/build for both AI and manual modes)
   # Use to inject banners, replace copyright text, rename page titles, etc.
   # Add "languages: [es, fr]" to a rule to restrict it to specific language outputs.
-  postTranslation: []
+  postTranslation:
+    - type: replace_text
+      selector: "head > title"
+      search: Dart
+      replace: Dart en Español
+      languages: ["es"]
+      description: Rename page titles for the Spanish translation
 
 # How to handle static assets (CSS, JS, images, fonts): "copy" (default) or "symlink"
 copyAssetsMode: copy

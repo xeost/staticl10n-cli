@@ -68,6 +68,37 @@ export async function capturePages(
     for (const pageRow of pages) {
       const playwrightPage = await context.newPage();
       try {
+        // Intercept all same-origin network responses BEFORE navigation so that
+        // runtime-loaded binary assets (WASM deferred modules, Dart2JS .part.js
+        // chunks, etc.) are saved to disk automatically. These files are fetched
+        // by JS/WASM code after hydration and cannot be discovered by parsing
+        // HTML or JS source statically.
+        const pageOrigin = new URL(pageRow.url).origin;
+        const RUNTIME_ASSET_EXTENSIONS = new Set(['wasm', 'part.js']);
+        const onResponse = async (response: import('playwright').Response): Promise<void> => {
+          try {
+            const url = response.url();
+            if (!url.startsWith(pageOrigin)) return;
+            const urlPath = new URL(url).pathname;
+            const filename = urlPath.split('/').pop() ?? '';
+            // Match .wasm or .part.js (or .<ext> from the set)
+            const isRuntimeAsset = RUNTIME_ASSET_EXTENSIONS.has(filename.split('.').pop()!) ||
+              filename.endsWith('.part.js');
+            if (!isRuntimeAsset) return;
+            const localRelPath = assetUrlToLocalPath(url, pageRow.url);
+            const localAbsPath = path.join(config.paths.original, localRelPath);
+            if (fs.existsSync(localAbsPath)) return;
+            if (!response.ok()) return;
+            const body = await response.body();
+            fs.ensureDirSync(path.dirname(localAbsPath));
+            fs.writeFileSync(localAbsPath, body);
+            logger.debug(`Intercepted runtime asset: ${filename}`);
+          } catch {
+            // Ignore — response may have already been consumed
+          }
+        };
+        playwrightPage.on('response', onResponse);
+
         const navigationResponse = await playwrightPage.goto(pageRow.url, {
           waitUntil: 'domcontentloaded',
           timeout: 30000,

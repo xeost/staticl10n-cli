@@ -75,6 +75,38 @@ export async function downloadAssets(
             }
           }
         }
+
+        // If this is a JS/MJS file, scan it for dynamically-referenced assets
+        // (e.g. import(), fetch(), importScripts(), new Worker()) so that
+        // companion files like *.wasm, *.mjs, *.dart2js.js are also downloaded.
+        if (assetUrl.endsWith('.js') || assetUrl.endsWith('.mjs') || assetUrl.endsWith('.cjs')) {
+          const jsText = buffer.toString('utf-8');
+          const jsAssets = extractJsAssets(jsText, assetUrl, new URL(pageUrl).origin);
+          for (const jsAssetUrl of jsAssets) {
+            if (!assetMap.has(jsAssetUrl)) {
+              const jsLocalPath = assetUrlToLocalPath(jsAssetUrl, pageUrl);
+              const jsLocalAbs = path.join(outputDir, jsLocalPath);
+              try {
+                if (fs.existsSync(jsLocalAbs)) {
+                  assetMap.set(jsAssetUrl, jsLocalPath);
+                  continue;
+                }
+                const jsRes = await apiRequest.get(jsAssetUrl);
+                if (jsRes.ok()) {
+                  const jsBuffer = await jsRes.body();
+                  fs.ensureDirSync(path.dirname(jsLocalAbs));
+                  fs.writeFileSync(jsLocalAbs, jsBuffer);
+                  assetMap.set(jsAssetUrl, jsLocalPath);
+                  downloaded++;
+                } else {
+                  logger.warn(`JS asset returned ${jsRes.status()}: ${jsAssetUrl}`);
+                }
+              } catch {
+                logger.warn(`Failed to download JS asset: ${jsAssetUrl}`);
+              }
+            }
+          }
+        }
       } else {
         if (response.status() === 404 && assetUrl.endsWith('.json')) {
           // Write an empty JSON object to prevent local dev servers from serving fallback HTML
@@ -230,4 +262,69 @@ function extractCssAssets(css: string, cssUrl: string): string[] {
     }
   }
   return urls;
+}
+
+/**
+ * Extracts asset references from a JavaScript/MJS file that are loaded
+ * dynamically at runtime (import(), fetch(), importScripts(), new Worker(),
+ * and string literals for files with known binary/module extensions).
+ * Also extracts Dart2JS `deferredPartUris` arrays so all deferred feature
+ * chunks (cookie_notice, theme_switcher, site_switcher, etc.) are downloaded.
+ * Only same-origin URLs are returned.
+ */
+function extractJsAssets(js: string, jsUrl: string, origin: string): string[] {
+  const found = new Set<string>();
+
+  // Patterns that load a file by URL string:
+  //   import("./foo.mjs")          — dynamic ESM import
+  //   fetch("./foo.wasm")          — Wasm / JSON fetch
+  //   importScripts("./foo.js")    — Web Worker classic script
+  //   new Worker("./foo.js")       — Web Worker constructor
+  //   relativeURL("./foo.mjs")     — Dart-compiled helper
+  const callPattern = /(?:import|fetch|importScripts|new\s+Worker|relativeURL)\s*\(\s*["'`]([^"'`]+)["'`]/g;
+  let m: RegExpExecArray | null;
+  while ((m = callPattern.exec(js)) !== null) {
+    tryResolve(m[1], jsUrl, origin, found);
+  }
+
+  // Plain string literals that look like relative asset paths with known extensions.
+  // Catches patterns like: src = "./main.client.dart2js.js"
+  const JS_ASSET_EXTENSIONS = /\.(?:js|mjs|cjs|wasm|json)(["'`?#]|$)/;
+  const stringLiteralPattern = /["'`]((?:\.{1,2}\/)[^"'`\s]+)["'`]/g;
+  while ((m = stringLiteralPattern.exec(js)) !== null) {
+    if (JS_ASSET_EXTENSIONS.test(m[1])) {
+      tryResolve(m[1], jsUrl, origin, found);
+    }
+  }
+
+  // Dart2JS deferred loading: the compiled bundle lists all lazy-loaded chunk
+  // filenames in a deferredPartUris:[...] array. Each entry is a path relative
+  // to the script itself. These chunks are only fetched when a deferred library
+  // (e.g. _cookie_notice, _theme_switcher) is first used, so they are never
+  // discovered by watching network traffic during capture. We must extract and
+  // download them eagerly.
+  //
+  // Example pattern inside dart2js output:
+  //   deferredPartUris:["main.client.dart2js.js_2.part.js","main.client.dart2js.js_13.part.js",...]
+  const deferredUrisPattern = /deferredPartUris\s*:\s*\[([^\]]+)\]/g;
+  while ((m = deferredUrisPattern.exec(js)) !== null) {
+    const entries = m[1].matchAll(/["']([^"']+\.part\.js)["']/g);
+    for (const entry of entries) {
+      tryResolve(entry[1], jsUrl, origin, found);
+    }
+  }
+
+  return Array.from(found);
+}
+
+
+/** Resolves a raw href against a base URL and adds it to the set if same-origin. */
+function tryResolve(raw: string, base: string, origin: string, out: Set<string>): void {
+  if (!raw || raw.startsWith('data:') || raw.startsWith('#')) return;
+  try {
+    const abs = new URL(raw, base);
+    if (abs.origin === origin) out.add(abs.href);
+  } catch {
+    // Ignore unparseable values
+  }
 }
