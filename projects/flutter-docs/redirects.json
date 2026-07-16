@@ -1,0 +1,77 @@
+{
+  "detectedAt": "2026-07-11T03:14:13.399Z",
+  "totalRedirects": 10,
+  "redirects": [
+    {
+      "disabled": false,
+      "from": "/cookbook",
+      "to": "/reference/learning-resources",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/platform-integration/ios/splash-screen",
+      "to": "/platform-integration/ios/launch-screen",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/ui/animations/index",
+      "to": "/ui/animations",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/get-started/fwe/state-management",
+      "to": "/learn/pathway",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/platform-integration/platform-adaptations",
+      "to": "/ui/adaptive-responsive/platform-adaptations",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/get-started/flutter-for/declarative",
+      "to": "/flutter-for/declarative",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/ai-toolkit",
+      "to": "/ai/ai-toolkit",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/tools/devtools/overview",
+      "to": "/tools/devtools",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/web",
+      "to": "/platform-integration/web",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    },
+    {
+      "disabled": false,
+      "from": "/desktop",
+      "to": "/platform-integration/desktop",
+      "statusCode": 301,
+      "detectedDuring": "crawl"
+    }
+  ],
+  "manual": []
+}

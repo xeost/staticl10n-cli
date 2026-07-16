@@ -184,6 +184,22 @@ personalization:
       replace: Bootstrap en Español
       languages: ["es"]
       description: Rename page titles for the Spanish translation
+    - type: replace_text
+      search: "https://getbootstrap.com/docs/5.3"
+      replace: "/docs/5.3"
+      description: "Rewrite absolute URLs to 5.3 docs as relative paths"
+    - type: replace_text
+      search: "https://getbootstrap.com/docs/5.2"
+      replace: "/docs/5.2"
+      description: "Rewrite absolute URLs to 5.2 docs as relative paths"
+    - type: replace_text
+      search: "https://getbootstrap.com/docs/5.1"
+      replace: "/docs/5.1"
+      description: "Rewrite absolute URLs to 5.1 docs as relative paths"
+    - type: replace_text
+      search: "https://getbootstrap.com/docs/5.0"
+      replace: "/docs/5.0"
+      description: "Rewrite absolute URLs to 5.0 docs as relative paths"
 
 # How to handle static assets (CSS, JS, images, fonts): "copy" (default) or "symlink"
 copyAssetsMode: copy
@@ -240,12 +256,12 @@ internalLinking:
       placement: internal
       page: "/docs/5.3/getting-started/download/"
       selector: "h2#cdn-via-jsdelivr"
-      anchorText: "revisa estas opciones de servidores para producción"
+      anchorText: "servidores para producción"
       htmlTemplate: |
         <div class="card border-primary my-4">
           <div class="card-body">
             <p class="card-text mb-0">
-              🚀 Antes de desplegar, <a href="{{url}}" class="card-link" rel="sponsored noopener">{{anchorText}}</a>.
+              🚀 Antes de desplegar, revisa estas opciones de <a href="{{url}}" class="card-link" rel="sponsored noopener">{{anchorText}}</a>.
             </p>
           </div>
         </div>
