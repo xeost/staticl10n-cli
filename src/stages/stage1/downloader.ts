@@ -163,6 +163,9 @@ function collectAssetUrls(html: string, pageUrl: string): string[] {
       resolve(url);
     });
   });
+  // Video and audio elements with src directly on the element
+  $('video[src]').each((_i, el) => resolve($(el).attr('src')));
+  $('audio[src]').each((_i, el) => resolve($(el).attr('src')));
   // Source elements (picture, video, audio)
   $('source[src]').each((_i, el) => resolve($(el).attr('src')));
   $('source[srcset]').each((_i, el) => {
@@ -186,6 +189,16 @@ function collectAssetUrls(html: string, pageUrl: string): string[] {
       }
     },
   );
+
+  // Inline style attributes — e.g. style="background-image: url(/assets/hero.png)"
+  $('[style]').each((_i, el) => {
+    const styleAttr = $(el).attr('style') ?? '';
+    const urlPattern = /url\(["']?([^"')]+)["']?\)/g;
+    let match: RegExpExecArray | null;
+    while ((match = urlPattern.exec(styleAttr)) !== null) {
+      resolve(match[1]);
+    }
+  });
 
   // Parse __config JSON block if present to download search worker and search index
   const configScript = $('script#__config').html();

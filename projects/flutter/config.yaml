@@ -101,11 +101,32 @@ translation:
 personalization:
   # Rules applied at the end of Stage 1, BEFORE translation
   # Use to remove analytics, tracking scripts, cookie banners, ads, etc.
-  preTranslation: []
+  preTranslation:
+    - type: remove_element
+      selector: 'script[src*="googletagmanager.com"]'
+      description: Remove Google Tag Manager external scripts
+    - type: remove_element
+      selector: 'script[src*="google-analytics.com"]'
+      description: Remove Google Analytics external scripts
+    - type: remove_element
+      selector: 'script:contains("window.dataLayer")'
+      description: Remove dataLayer inline script
+    - type: remove_element
+      selector: 'script:contains("gtm.js")'
+      description: Remove GTM inline script
+    - type: remove_element
+      selector: 'script:contains("GoogleAnalyticsObject")'
+      description: Remove UA inline script
   # Rules applied AFTER translation (applied automatically during translation/build for both AI and manual modes)
   # Use to inject banners, replace copyright text, rename page titles, etc.
   # Add "languages: [es, fr]" to a rule to restrict it to specific language outputs.
-  postTranslation: []
+  postTranslation:
+    - type: replace_text
+      selector: "head > title"
+      search: Flutter
+      replace: Flutter en Español
+      languages: ["es"]
+      description: Rename page titles for the Spanish translation
 
 # How to handle static assets (CSS, JS, images, fonts): "copy" (default) or "symlink"
 copyAssetsMode: copy
