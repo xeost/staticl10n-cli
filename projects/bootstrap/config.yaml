@@ -200,6 +200,10 @@ personalization:
       search: "https://getbootstrap.com/docs/5.0"
       replace: "/docs/5.0"
       description: "Rewrite absolute URLs to 5.0 docs as relative paths"
+    - type: inject_html
+      position: body_end
+      html: '<script src="http://localhost:8787/ads.js" async></script>'
+      description: "Inject ads script before </body>"
 
 # How to handle static assets (CSS, JS, images, fonts): "copy" (default) or "symlink"
 copyAssetsMode: copy
